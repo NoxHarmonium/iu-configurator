@@ -5,7 +5,7 @@ use leptos_router::{
     StaticSegment,
 };
 
-use crate::pages::{config::ConfigPage, schedule::SchedulePage};
+use crate::pages::{config::ConfigPage, run::RunPage, schedule::SchedulePage};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -40,6 +40,7 @@ pub fn App() -> impl IntoView {
                     <nav class="site-nav">
                         <a class="site-nav__link" href="/">"Schedule"</a>
                         <a class="site-nav__link" href="/config">"Configuration"</a>
+                        <a class="site-nav__link" href="/run">"Force Run"</a>
                     </nav>
                 </div>
             </header>
@@ -47,6 +48,7 @@ pub fn App() -> impl IntoView {
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=SchedulePage/>
                     <Route path=StaticSegment("config") view=ConfigPage/>
+                    <Route path=StaticSegment("run") view=RunPage/>
                 </Routes>
             </main>
         </Router>

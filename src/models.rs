@@ -26,8 +26,13 @@ pub struct Schedule {
     pub afternoon_days: Vec<String>,
     /// Per-zone config keyed by zone_id (e.g. "zone_1").
     pub zones: HashMap<String, ZoneSchedule>,
+    /// Zones selected for the next manual run, keyed by zone_id → duration in seconds.
+    /// Empty map means no manual sequence is emitted in the YAML.
+    #[serde(default)]
+    pub manual_zones: HashMap<String, u32>,
 }
 
+// TODO: Make default schedules configurable via config file
 impl Schedule {
     /// Seed defaults based on the Winter – Regular schedule.
     /// All days start as OFF; user enables them via the UI.
@@ -109,6 +114,7 @@ impl Schedule {
             morning_days: Vec::new(),   // all off until user enables
             afternoon_days: Vec::new(), // all off until user enables
             zones,
+            manual_zones: HashMap::new(),
         }
     }
 }

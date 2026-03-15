@@ -42,6 +42,7 @@ struct IuSequence {
     name: String,
     sequence_id: String,
     delay: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     schedules: Vec<IuSchedule>,
     zones: Vec<IuSeqZone>,
 }
@@ -130,6 +131,19 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                 }
             }
 
+            // Manual sequence — no schedules, triggered via HA API only.
+            // Only emitted when at least one zone has a non-zero duration selected.
+            let manual_seq_zones = build_manual_seq_zones(ctrl.id, &schedule.manual_zones);
+            if !manual_seq_zones.is_empty() {
+                sequences.push(IuSequence {
+                    name: "Manual".into(),
+                    sequence_id: "manual".into(),
+                    delay: ctrl.delay_secs,
+                    schedules: vec![],
+                    zones: manual_seq_zones,
+                });
+            }
+
             IuController {
                 name: ctrl.name.to_string(),
                 preamble: ctrl.preamble_secs,
@@ -155,6 +169,30 @@ fn build_seq_zones(
             zone_schedules.get(z.id).and_then(|zs| {
                 let secs = get_secs(zs);
                 if zs.enabled && secs > 0 {
+                    Some(IuSeqZone {
+                        zone_id: z.id.to_string(),
+                        duration: format_duration(secs),
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+/// Build the sequence zone list for a manual run, including only zones that
+/// appear in `manual_zones` with a non-zero duration.
+fn build_manual_seq_zones(
+    controller_id: &str,
+    manual_zones: &HashMap<String, u32>,
+) -> Vec<IuSeqZone> {
+    ZONES
+        .iter()
+        .filter(|z| z.controller_id == controller_id)
+        .filter_map(|z| {
+            manual_zones.get(z.id).and_then(|&secs| {
+                if secs > 0 {
                     Some(IuSeqZone {
                         zone_id: z.id.to_string(),
                         duration: format_duration(secs),
@@ -221,12 +259,8 @@ mod tests {
         let yaml = generate_yaml(&schedule).unwrap();
 
         assert!(
-            yaml.contains("front_morning"),
-            "missing front_morning sequence_id"
-        );
-        assert!(
-            yaml.contains("back_morning"),
-            "missing back_morning sequence_id"
+            yaml.contains("main_morning"),
+            "missing main_morning sequence_id"
         );
         assert!(yaml.contains("07:00"), "missing morning time");
         assert!(!yaml.contains("afternoon"), "unexpected afternoon sequence");
@@ -240,8 +274,7 @@ mod tests {
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        assert!(yaml.contains("front_afternoon"));
-        assert!(yaml.contains("back_afternoon"));
+        assert!(yaml.contains("main_afternoon"));
         assert!(yaml.contains("15:00"));
         assert!(!yaml.contains("morning"));
     }
@@ -306,10 +339,45 @@ mod tests {
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        assert!(yaml.contains("front_morning"));
-        assert!(yaml.contains("front_afternoon"));
-        assert!(yaml.contains("back_morning"));
-        assert!(yaml.contains("back_afternoon"));
+        assert!(yaml.contains("main_morning"));
+        assert!(yaml.contains("main_afternoon"));
+    }
+
+    #[test]
+    fn test_manual_sequence_emitted_when_zones_selected() {
+        let mut schedule = Schedule::default_seed();
+        schedule.manual_zones.insert("zone_1".into(), 120);
+        schedule.manual_zones.insert("zone_5".into(), 300);
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("sequence_id: manual"),
+            "missing manual sequence_id"
+        );
+        assert!(
+            yaml.contains("zone_id: zone_1"),
+            "missing zone_1 in manual sequence"
+        );
+        assert!(
+            yaml.contains("zone_id: zone_5"),
+            "missing zone_5 in manual sequence"
+        );
+        // schedules key should be absent for the manual sequence
+        assert!(
+            !yaml.contains("schedules:"),
+            "manual sequence should have no schedules block"
+        );
+    }
+
+    #[test]
+    fn test_manual_sequence_absent_when_no_zones() {
+        let schedule = Schedule::default_seed(); // manual_zones is empty
+        let yaml = generate_yaml(&schedule).unwrap();
+        assert!(
+            !yaml.contains("manual"),
+            "manual sequence should not appear when no zones selected"
+        );
     }
 
     #[test]
