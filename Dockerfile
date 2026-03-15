@@ -15,14 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# # dart-sass (for SCSS compilation)
-# RUN curl -fsSL https://github.com/sass/dart-sass/releases/download/1.77.6/dart-sass-1.77.6-linux-x64.tar.gz \
-#     | tar -xz -C /usr/local/bin --strip-components=1 dart-sass/sass
-
-# # binaryen (wasm-opt, used by cargo-leptos in release builds)
-# RUN curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz \
-#     | tar -xz -C /usr/local --strip-components=1
-
 # Add the WASM target
 RUN rustup target add wasm32-unknown-unknown
 
