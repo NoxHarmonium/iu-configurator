@@ -1,82 +1,117 @@
-<picture>
-    <source srcset="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_Solid_White.svg" media="(prefers-color-scheme: dark)">
-    <img src="https://raw.githubusercontent.com/leptos-rs/leptos/main/docs/logos/Leptos_logo_RGB.svg" alt="Leptos Logo">
-</picture>
+# iu-configurator
 
-# Leptos Axum Starter Template
+A web UI for configuring [Home Assistant](https://www.home-assistant.io/)'s [`irrigation_unlimited`](https://github.com/rgc99/irrigation_unlimited) integration. Generates the YAML config and reloads HA automatically — no manual file editing required.
 
-This is a template for use with the [Leptos](https://github.com/leptos-rs/leptos) web framework and the [cargo-leptos](https://github.com/akesson/cargo-leptos) tool using [Axum](https://github.com/tokio-rs/axum).
+Built with [Leptos](https://github.com/leptos-rs/leptos) + [Axum](https://github.com/tokio-rs/axum).
 
-## Creating your template repo
+---
 
-If you don't have `cargo-leptos` installed you can install it with
+## Prerequisites
+
+- Rust stable + `wasm32-unknown-unknown` target
+- [`cargo-leptos`](https://github.com/akesson/cargo-leptos)
+- [Dart Sass](https://sass-lang.com/install/) (`sass` on PATH)
 
 ```bash
+rustup target add wasm32-unknown-unknown
 cargo install cargo-leptos --locked
 ```
 
-Then run
-```bash
-cargo leptos new --git https://github.com/leptos-rs/start-axum
-```
+---
 
-to generate a new project template.
-
-```bash
-cd iu-configurator
-```
-
-to go to your newly created project.
-Feel free to explore the project structure, but the best place to start with your application code is in `src/app.rs`.
-Additionally, Cargo.toml may need updating as new versions of the dependencies are released, especially if things are not working after a `cargo update`.
-
-## Running your project
+## Development
 
 ```bash
 cargo leptos watch
 ```
 
-## Installing Additional Tools
+The app is served at <http://localhost:3000> with hot-reloading.
 
-By default, `cargo-leptos` uses `nightly` Rust, `cargo-generate`, and `sass`. If you run into any trouble, you may need to install one or more of these tools.
+---
 
-1. `rustup toolchain install nightly --allow-downgrade` - make sure you have Rust nightly
-2. `rustup target add wasm32-unknown-unknown` - add the ability to compile Rust to WebAssembly
-3. `cargo install cargo-generate` - install `cargo-generate` binary (should be installed automatically in future)
-4. `npm install -g sass` - install `dart-sass` (should be optional in future
-5. Run `npm install` in end2end subdirectory before test
+## Configuration
 
-## Compiling for Release
+All configuration is via environment variables:
+
+| Variable           | Default        | Required | Description                                                                                              |
+| ------------------ | -------------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `CONFIG_DIR`       | `/config`      | No       | Directory where `schedule.json` and the generated `irrigation_unlimited.yaml` are written                |
+| `HA_URL`           | _(unset)_      | No       | Home Assistant base URL, e.g. `http://homeassistant.local:8123`. If unset, the HA reload call is skipped |
+| `HA_TOKEN`         | _(unset)_      | No       | Long-lived HA access token. Generate one in HA under **Profile → Long-Lived Access Tokens**              |
+| `LEPTOS_SITE_ADDR` | `0.0.0.0:3000` | No       | Address the server binds to                                                                              |
+
+---
+
+## Test & Lint
+
+```bash
+cargo test --features ssr
+cargo clippy --features ssr -- -D warnings
+cargo clippy --features hydrate --target wasm32-unknown-unknown -- -D warnings
+cargo fmt --check
+```
+
+---
+
+## Production Build
+
 ```bash
 cargo leptos build --release
 ```
 
-Will generate your server binary in target/release and your site package in target/site
+Produces:
 
-## Testing Your Project
+- `target/release/iu-configurator` — the server binary
+- `target/site/` — static assets (JS, WASM, CSS)
+
+---
+
+## Docker
+
+Build and run locally:
+
 ```bash
-cargo leptos end-to-end
+docker build -t iu-configurator .
+
+docker run -p 3000:3000 \
+  -e HA_URL=http://homeassistant.local:8123 \
+  -e HA_TOKEN=your_token_here \
+  -v /path/to/ha/config:/config \
+  iu-configurator
 ```
 
+The `/config` volume is where `schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
+
+---
+
+## Release
+
+Tagging a `v*.*.*` version triggers the CD workflow to build a multi-arch image (`amd64` + `arm64`) and push it to ECR:
+
 ```bash
-cargo leptos end-to-end --release
+git tag v1.0.0
+git push --tags
 ```
 
 Cargo-leptos uses Playwright as the end-to-end test tool.
 Tests are located in end2end/tests directory.
 
 ## Executing a Server on a Remote Machine Without the Toolchain
+
 After running a `cargo leptos build --release` the minimum files needed are:
 
 1. The server binary located in `target/server/release`
 2. The `site` directory and all files within located in `target/site`
 
 Copy these files to your remote server. The directory structure should be:
+
 ```text
 iu-configurator
 site/
 ```
+
 Set the following environment variables (updating for your project as needed):
+
 ```sh
 export LEPTOS_OUTPUT_NAME="iu-configurator"
 export LEPTOS_SITE_ROOT="site"
@@ -84,8 +119,5 @@ export LEPTOS_SITE_PKG_DIR="pkg"
 export LEPTOS_SITE_ADDR="127.0.0.1:3000"
 export LEPTOS_RELOAD_PORT="3001"
 ```
+
 Finally, run the server binary.
-
-## Licensing
-
-This template itself is released under the Unlicense. You should replace the LICENSE for your own application with an appropriate license if you plan to release it publicly.
