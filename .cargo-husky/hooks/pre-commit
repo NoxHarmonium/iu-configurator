@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+echo "--- cargo fmt --check ---"
+cargo fmt --check
+
+echo "--- cargo clippy (ssr) ---"
+cargo clippy --features ssr -- -D warnings
+
+echo "--- cargo clippy (hydrate/wasm) ---"
+cargo clippy --features hydrate --target wasm32-unknown-unknown -- -D warnings
