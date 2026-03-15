@@ -2,7 +2,7 @@
 
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
 # cargo-leptos needs: Rust stable + wasm32 target + dart-sass + binaryen (wasm-opt)
-FROM --platform=$BUILDPLATFORM rust:1.86-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.94-trixie AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -15,19 +15,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# dart-sass (for SCSS compilation)
-RUN curl -fsSL https://github.com/sass/dart-sass/releases/download/1.77.6/dart-sass-1.77.6-linux-x64.tar.gz \
-    | tar -xz -C /usr/local/bin --strip-components=1 dart-sass/sass
+# # dart-sass (for SCSS compilation)
+# RUN curl -fsSL https://github.com/sass/dart-sass/releases/download/1.77.6/dart-sass-1.77.6-linux-x64.tar.gz \
+#     | tar -xz -C /usr/local/bin --strip-components=1 dart-sass/sass
 
-# binaryen (wasm-opt, used by cargo-leptos in release builds)
-RUN curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz \
-    | tar -xz -C /usr/local --strip-components=1
+# # binaryen (wasm-opt, used by cargo-leptos in release builds)
+# RUN curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz \
+#     | tar -xz -C /usr/local --strip-components=1
 
 # Add the WASM target
 RUN rustup target add wasm32-unknown-unknown
 
 # Install cargo-leptos (pinned version for reproducibility)
-RUN cargo install cargo-leptos --version 0.2.22 --locked
+RUN cargo install cargo-leptos --version 0.3.5 --locked
 
 WORKDIR /app
 
@@ -44,7 +44,7 @@ COPY . .
 RUN cargo leptos build --release 2>&1
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

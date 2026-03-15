@@ -14,7 +14,7 @@ Built with [Leptos](https://github.com/leptos-rs/leptos) + [Axum](https://github
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install cargo-leptos --locked
+cargo install cargo-leptos --version 0.3.5 --locked
 ```
 
 ---
