@@ -96,8 +96,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
             // Morning sequence — only emitted when at least one day is selected
             // and at least one enabled zone exists for this controller.
             if !schedule.morning_days.is_empty() {
-                let seq_zones =
-                    build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.morning_secs);
+                let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.morning_secs);
                 if !seq_zones.is_empty() {
                     sequences.push(IuSequence {
                         name: "Morning".into(),
@@ -115,8 +114,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             // Afternoon sequence
             if !schedule.afternoon_days.is_empty() {
-                let seq_zones =
-                    build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.afternoon_secs);
+                let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.afternoon_secs);
                 if !seq_zones.is_empty() {
                     sequences.push(IuSequence {
                         name: "Afternoon".into(),
@@ -218,13 +216,18 @@ mod tests {
     #[test]
     fn test_morning_only_sequence() {
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days =
-            vec!["mon".into(), "wed".into(), "fri".into()];
+        schedule.morning_days = vec!["mon".into(), "wed".into(), "fri".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        assert!(yaml.contains("front_morning"), "missing front_morning sequence_id");
-        assert!(yaml.contains("back_morning"), "missing back_morning sequence_id");
+        assert!(
+            yaml.contains("front_morning"),
+            "missing front_morning sequence_id"
+        );
+        assert!(
+            yaml.contains("back_morning"),
+            "missing back_morning sequence_id"
+        );
         assert!(yaml.contains("07:00"), "missing morning time");
         assert!(!yaml.contains("afternoon"), "unexpected afternoon sequence");
         assert!(yaml.contains("mon"), "missing weekday filter");
@@ -247,14 +250,22 @@ mod tests {
     fn test_all_seven_days_omits_weekday_field() {
         let mut schedule = Schedule::default_seed();
         schedule.morning_days = vec![
-            "mon".into(), "tue".into(), "wed".into(),
-            "thu".into(), "fri".into(), "sat".into(), "sun".into(),
+            "mon".into(),
+            "tue".into(),
+            "wed".into(),
+            "thu".into(),
+            "fri".into(),
+            "sat".into(),
+            "sun".into(),
         ];
 
         let yaml = generate_yaml(&schedule).unwrap();
 
         // weekday filter should be omitted when all 7 days selected
-        assert!(!yaml.contains("weekday:"), "weekday should be absent for all-7-days");
+        assert!(
+            !yaml.contains("weekday:"),
+            "weekday should be absent for all-7-days"
+        );
     }
 
     #[test]
@@ -266,7 +277,10 @@ mod tests {
         let yaml = generate_yaml(&schedule).unwrap();
 
         // zone_4 must appear in the controller zones list (the physical definitions)
-        assert!(yaml.contains("zone_4"), "zone_4 should be in zone definitions");
+        assert!(
+            yaml.contains("zone_4"),
+            "zone_4 should be in zone definitions"
+        );
 
         // But the sequence zones for front controller should only list zone_1,2,3
         // We check that zone_4 does NOT appear as a duration entry by ensuring
@@ -302,8 +316,13 @@ mod tests {
     fn print_sample_yaml() {
         // Not a real assertion — useful for manual inspection during development.
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days =
-            vec!["mon".into(), "tue".into(), "wed".into(), "thu".into(), "fri".into()];
+        schedule.morning_days = vec![
+            "mon".into(),
+            "tue".into(),
+            "wed".into(),
+            "thu".into(),
+            "fri".into(),
+        ];
         schedule.afternoon_days = vec!["sat".into(), "sun".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
