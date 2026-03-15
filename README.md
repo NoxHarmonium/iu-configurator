@@ -76,7 +76,7 @@ docker build -t iu-configurator .
 docker run -p 3000:3000 \
   -e HA_URL=http://homeassistant.local:8123 \
   -e HA_TOKEN=your_token_here \
-  -v /path/to/ha/config:/config \
+  -v ./config:/config \
   iu-configurator
 ```
 
