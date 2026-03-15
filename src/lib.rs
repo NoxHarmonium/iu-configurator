@@ -1,6 +1,7 @@
 pub mod app;
 pub mod definitions;
 pub mod models;
+pub mod server_fns;
 
 #[cfg(feature = "ssr")]
 pub mod yaml_gen;
