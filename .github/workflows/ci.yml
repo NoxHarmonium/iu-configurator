@@ -40,13 +40,11 @@ jobs:
         run: cargo test --features ssr --no-default-features
 
   # ── Docker build check ───────────────────────────────────────────────────────
-  # Verifies the Dockerfile builds correctly on every PR without pushing.
+  # Verifies the Dockerfile builds correctly on every PR and main push.
   # No registry credentials are required — `push: false` keeps everything local.
   docker-build:
     name: Docker build (no push)
     runs-on: ubuntu-latest
-    # Only run on pull requests; tag-triggered CD handles the real publish.
-    if: github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
