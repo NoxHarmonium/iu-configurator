@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Per-zone dynamic schedule data — stored in schedule.json.
+/// Per-zone dynamic schedule data — stored in iu-schedule.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneSchedule {
     pub enabled: bool,

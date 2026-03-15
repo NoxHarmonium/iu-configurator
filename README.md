@@ -35,7 +35,7 @@ All configuration is via environment variables:
 
 | Variable           | Default        | Required | Description                                                                                              |
 | ------------------ | -------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `CONFIG_DIR`       | `/config`      | No       | Directory where `schedule.json` and the generated `irrigation_unlimited.yaml` are written                |
+| `CONFIG_DIR`       | `/config`      | No       | Directory where `iu-schedule.json` and the generated `irrigation_unlimited.yaml` are written             |
 | `HA_URL`           | _(unset)_      | No       | Home Assistant base URL, e.g. `http://homeassistant.local:8123`. If unset, the HA reload call is skipped |
 | `HA_TOKEN`         | _(unset)_      | No       | Long-lived HA access token. Generate one in HA under **Profile → Long-Lived Access Tokens**              |
 | `LEPTOS_SITE_ADDR` | `0.0.0.0:3000` | No       | Address the server binds to                                                                              |
@@ -80,7 +80,7 @@ docker run -p 3000:3000 \
   iu-configurator
 ```
 
-The `/config` volume is where `schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
+The `/config` volume is where `iu-schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
 
 ---
 

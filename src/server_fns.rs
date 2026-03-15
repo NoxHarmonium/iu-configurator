@@ -20,21 +20,21 @@ pub enum IrrigationStatus {
 // Server functions
 // ---------------------------------------------------------------------------
 
-/// Load the current schedule from `$CONFIG_DIR/schedule.json`.
+/// Load the current schedule from `$CONFIG_DIR/iu-schedule.json`.
 /// Returns seeded defaults if the file does not yet exist.
 #[server]
 pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
     use std::path::PathBuf;
 
     let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
-    let path = PathBuf::from(&config_dir).join("schedule.json");
+    let path = PathBuf::from(&config_dir).join("iu-schedule.json");
 
     if path.exists() {
         let content = tokio::fs::read_to_string(&path)
             .await
-            .map_err(|e| ServerFnError::new(format!("Failed to read schedule.json: {e}")))?;
+            .map_err(|e| ServerFnError::new(format!("Failed to read iu-schedule.json: {e}")))?;
         serde_json::from_str(&content)
-            .map_err(|e| ServerFnError::new(format!("Failed to parse schedule.json: {e}")))
+            .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))
     } else {
         Ok(Schedule::default_seed())
     }
@@ -58,12 +58,12 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to create config dir: {e}")))?;
 
-    // ── schedule.json ──────────────────────────────────────────────────────
+    // ── iu-schedule.json ──────────────────────────────────────────────────────
     let json = serde_json::to_string_pretty(&schedule)
         .map_err(|e| ServerFnError::new(format!("Failed to serialise schedule: {e}")))?;
-    tokio::fs::write(config_path.join("schedule.json"), json)
+    tokio::fs::write(config_path.join("iu-schedule.json"), json)
         .await
-        .map_err(|e| ServerFnError::new(format!("Failed to write schedule.json: {e}")))?;
+        .map_err(|e| ServerFnError::new(format!("Failed to write iu-schedule.json: {e}")))?;
 
     // ── irrigation_unlimited.yaml ──────────────────────────────────────────
     let yaml = generate_yaml(&schedule)

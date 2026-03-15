@@ -16,7 +16,7 @@ pub struct ControllerDef {
 
 /// Static definition of a watering zone.
 pub struct ZoneDef {
-    /// Stable zone identifier — must be snake_case, matches schedule.json key.
+    /// Stable zone identifier — must be snake_case, matches iu-schedule.json key.
     pub id: &'static str,
     /// Which controller this zone belongs to.
     pub controller_id: &'static str,
