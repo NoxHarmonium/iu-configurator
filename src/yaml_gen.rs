@@ -259,12 +259,8 @@ mod tests {
         let yaml = generate_yaml(&schedule).unwrap();
 
         assert!(
-            yaml.contains("front_morning"),
-            "missing front_morning sequence_id"
-        );
-        assert!(
-            yaml.contains("back_morning"),
-            "missing back_morning sequence_id"
+            yaml.contains("main_morning"),
+            "missing main_morning sequence_id"
         );
         assert!(yaml.contains("07:00"), "missing morning time");
         assert!(!yaml.contains("afternoon"), "unexpected afternoon sequence");
@@ -278,8 +274,7 @@ mod tests {
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        assert!(yaml.contains("front_afternoon"));
-        assert!(yaml.contains("back_afternoon"));
+        assert!(yaml.contains("main_afternoon"));
         assert!(yaml.contains("15:00"));
         assert!(!yaml.contains("morning"));
     }
@@ -344,10 +339,45 @@ mod tests {
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        assert!(yaml.contains("front_morning"));
-        assert!(yaml.contains("front_afternoon"));
-        assert!(yaml.contains("back_morning"));
-        assert!(yaml.contains("back_afternoon"));
+        assert!(yaml.contains("main_morning"));
+        assert!(yaml.contains("main_afternoon"));
+    }
+
+    #[test]
+    fn test_manual_sequence_emitted_when_zones_selected() {
+        let mut schedule = Schedule::default_seed();
+        schedule.manual_zones.insert("zone_1".into(), 120);
+        schedule.manual_zones.insert("zone_5".into(), 300);
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("sequence_id: manual"),
+            "missing manual sequence_id"
+        );
+        assert!(
+            yaml.contains("zone_id: zone_1"),
+            "missing zone_1 in manual sequence"
+        );
+        assert!(
+            yaml.contains("zone_id: zone_5"),
+            "missing zone_5 in manual sequence"
+        );
+        // schedules key should be absent for the manual sequence
+        assert!(
+            !yaml.contains("schedules:"),
+            "manual sequence should have no schedules block"
+        );
+    }
+
+    #[test]
+    fn test_manual_sequence_absent_when_no_zones() {
+        let schedule = Schedule::default_seed(); // manual_zones is empty
+        let yaml = generate_yaml(&schedule).unwrap();
+        assert!(
+            !yaml.contains("manual"),
+            "manual sequence should not appear when no zones selected"
+        );
     }
 
     #[test]
