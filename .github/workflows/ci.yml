@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pin the toolchain via rust-toolchain.toml if you add one; otherwise stable is used.
+
+jobs:
+  test-and-lint:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (ssr)
+        run: cargo clippy --features ssr --no-default-features -- -D warnings
+
+      - name: Clippy (hydrate / wasm)
+        run: cargo clippy --features hydrate --no-default-features --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Tests (ssr)
+        run: cargo test --features ssr --no-default-features
