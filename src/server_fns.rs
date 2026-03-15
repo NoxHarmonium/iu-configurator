@@ -75,9 +75,7 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
         })?;
 
     // ── HA reload (best-effort) ────────────────────────────────────────────
-    if let (Ok(ha_url), Ok(ha_token)) =
-        (std::env::var("HA_URL"), std::env::var("HA_TOKEN"))
-    {
+    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
         reload_ha_config(&ha_url, &ha_token).await?;
     }
 
@@ -114,11 +112,7 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
             .await
         {
             Ok(r) => r,
-            Err(e) => {
-                return Ok(IrrigationStatus::Unknown(format!(
-                    "HA request failed: {e}"
-                )))
-            }
+            Err(e) => return Ok(IrrigationStatus::Unknown(format!("HA request failed: {e}"))),
         };
 
         if !response.status().is_success() {

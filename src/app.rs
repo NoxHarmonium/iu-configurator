@@ -5,6 +5,8 @@ use leptos_router::{
     StaticSegment,
 };
 
+use crate::pages::{config::ConfigPage, schedule::SchedulePage};
+
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
@@ -25,37 +27,28 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
     view! {
-        // injects a stylesheet into the document <head>
-        // id=leptos means cargo-leptos will hot-reload this stylesheet
         <Stylesheet id="leptos" href="/pkg/iu-configurator.css"/>
+        <Title text="Irrigation Scheduler"/>
 
-        // sets the document title
-        <Title text="Welcome to Leptos"/>
-
-        // content for this welcome page
         <Router>
-            <main>
+            <header class="site-header">
+                <div class="site-header__inner">
+                    <span class="site-header__brand">"🌿 Irrigation Scheduler"</span>
+                    <nav class="site-nav">
+                        <a class="site-nav__link" href="/">"Schedule"</a>
+                        <a class="site-nav__link" href="/config">"Configuration"</a>
+                    </nav>
+                </div>
+            </header>
+            <main class="site-main">
                 <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
+                    <Route path=StaticSegment("") view=SchedulePage/>
+                    <Route path=StaticSegment("config") view=ConfigPage/>
                 </Routes>
             </main>
         </Router>
-    }
-}
-
-/// Renders the home page of your application.
-#[component]
-fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-    let count = RwSignal::new(0);
-    let on_click = move |_| *count.write() += 1;
-
-    view! {
-        <h1>"Welcome to Leptos!"</h1>
-        <button on:click=on_click>"Click Me: " {count}</button>
     }
 }
