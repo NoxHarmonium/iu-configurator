@@ -8,6 +8,9 @@ env:
   ECR_REGISTRY: public.ecr.aws
   ECR_REPOSITORY: public.ecr.aws/j0s7z4j0/hopyard/iu-configurator
 
+permissions:
+  id-token: write
+
 jobs:
   build-and-push:
     name: Build multi-arch image and push to ECR
