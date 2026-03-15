@@ -38,3 +38,5 @@ jobs:
 
       - name: Tests (ssr)
         run: cargo test --features ssr --no-default-features
+
+        # TODO: Do a cargo leptos build to verify that works - it might be really slow though

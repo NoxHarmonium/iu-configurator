@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add wasm32-unknown-unknown
 
 # Install cargo-leptos (pinned version for reproducibility)
-RUN cargo install cargo-leptos --version 0.3.5 --locked
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/leptos-rs/cargo-leptos/releases/download/v0.3.5/cargo-leptos-installer.sh | sh
 
 WORKDIR /app
 
