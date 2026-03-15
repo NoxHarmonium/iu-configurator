@@ -42,8 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user
-RUN useradd -m -u 1001 appuser
+# Non-root user (568:568 matches TrueCharts' home assistant UID/GID)
+RUN groupadd -g 568 appgroup && useradd -m -u 568 -g 568 appuser
 
 WORKDIR /app
 
