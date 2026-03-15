@@ -93,6 +93,18 @@ git tag v1.0.0
 git push --tags
 ```
 
+### CD Workflow
+
+The CD workflow runs three jobs:
+
+1. **`build (amd64)`** — builds the `linux/amd64` image natively on an `ubuntu-latest` runner and pushes it to ECR by digest.
+2. **`build (arm64)`** — builds the `linux/arm64` image natively on an `ubuntu-24.04-arm` runner and pushes it to ECR by digest.
+3. **`merge`** — combines the two per-arch digests into a single multi-arch manifest list (`linux/amd64` + `linux/arm64`) and applies the semver tags.
+
+Each architecture is built on its own native runner (no QEMU emulation), which dramatically reduces build time. GitHub Actions cache is used for each architecture independently (`scope=amd64` / `scope=arm64`) so Docker layers are reused between runs.
+
+### End-to-End Testing
+
 Cargo-leptos uses Playwright as the end-to-end test tool.
 Tests are located in end2end/tests directory.
 
