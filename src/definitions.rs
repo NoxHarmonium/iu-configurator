@@ -26,71 +26,62 @@ pub struct ZoneDef {
     pub entity_id: &'static str,
 }
 
-pub static CONTROLLERS: &[ControllerDef] = &[
-    ControllerDef {
-        id: "front",
-        name: "Front of house",
-        preamble_secs: 5,
-        postamble_secs: 5,
-        delay_secs: 5,
-        ha_master_entity: "binary_sensor.irrigation_unlimited_c1_m",
-    },
-    ControllerDef {
-        id: "back",
-        name: "Back of house",
-        preamble_secs: 5,
-        postamble_secs: 5,
-        delay_secs: 5,
-        ha_master_entity: "binary_sensor.irrigation_unlimited_c2_m",
-    },
-];
+// TODO: Make controllers and zones configurable via a config file somewhere
+pub static CONTROLLERS: &[ControllerDef] = &[ControllerDef {
+    id: "main",
+    name: "Irrigation",
+    preamble_secs: 5,
+    postamble_secs: 5,
+    delay_secs: 5,
+    ha_master_entity: "binary_sensor.irrigation_unlimited_c1_m",
+}];
 
 pub static ZONES: &[ZoneDef] = &[
     ZoneDef {
         id: "zone_1",
-        controller_id: "front",
+        controller_id: "main",
         name: "1. Balcony Pots",
         entity_id: "switch.front_irrigation_controller_l1",
     },
     ZoneDef {
         id: "zone_2",
-        controller_id: "front",
+        controller_id: "main",
         name: "2. Driveway Pots",
         entity_id: "switch.front_irrigation_controller_l2",
     },
     ZoneDef {
         id: "zone_3",
-        controller_id: "front",
+        controller_id: "main",
         name: "3. Front Garden Bed",
         entity_id: "switch.front_irrigation_controller_l3",
     },
     ZoneDef {
         id: "zone_4",
-        controller_id: "front",
+        controller_id: "main",
         name: "4. Natives",
         entity_id: "input_boolean.irrigation_zone_4",
     },
     ZoneDef {
         id: "zone_5",
-        controller_id: "back",
+        controller_id: "main",
         name: "5. Deck Planter Boxes",
         entity_id: "switch.irrigation_controller_l1",
     },
     ZoneDef {
         id: "zone_6",
-        controller_id: "back",
+        controller_id: "main",
         name: "6. Around Lemon Tree",
         entity_id: "switch.irrigation_controller_l2",
     },
     ZoneDef {
         id: "zone_7",
-        controller_id: "back",
+        controller_id: "main",
         name: "7. Vege Patch",
         entity_id: "switch.irrigation_controller_l3",
     },
     ZoneDef {
         id: "zone_8",
-        controller_id: "back",
+        controller_id: "main",
         name: "8. Fernararium",
         entity_id: "switch.irrigation_controller_l4",
     },

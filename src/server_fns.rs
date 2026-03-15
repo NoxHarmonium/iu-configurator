@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -139,6 +141,63 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
     Ok(IrrigationStatus::Idle)
 }
 
+/// Update manual_zones in the persisted schedule, regenerate YAML, reload HA,
+/// then trigger the manual sequence via the irrigation_unlimited.manual_run service.
+#[server]
+pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), ServerFnError> {
+    use std::path::PathBuf;
+
+    use crate::yaml_gen::generate_yaml;
+
+    let has_zones = manual_zones.values().any(|&s| s > 0);
+    if !has_zones {
+        return Err(ServerFnError::new("No zones selected for manual run"));
+    }
+
+    let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
+    let config_path = PathBuf::from(&config_dir);
+
+    tokio::fs::create_dir_all(&config_path)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to create config dir: {e}")))?;
+
+    // Read current schedule and update manual_zones.
+    let path = config_path.join("iu-schedule.json");
+    let mut schedule: Schedule = if path.exists() {
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to read iu-schedule.json: {e}")))?;
+        serde_json::from_str(&content)
+            .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))?
+    } else {
+        Schedule::default_seed()
+    };
+
+    schedule.manual_zones = manual_zones;
+
+    let json = serde_json::to_string_pretty(&schedule)
+        .map_err(|e| ServerFnError::new(format!("Failed to serialise schedule: {e}")))?;
+    tokio::fs::write(config_path.join("iu-schedule.json"), json)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to write iu-schedule.json: {e}")))?;
+
+    let yaml = generate_yaml(&schedule)
+        .map_err(|e| ServerFnError::new(format!("Failed to generate YAML: {e}")))?;
+    tokio::fs::write(config_path.join("irrigation_unlimited.yaml"), yaml)
+        .await
+        .map_err(|e| {
+            ServerFnError::new(format!("Failed to write irrigation_unlimited.yaml: {e}"))
+        })?;
+
+    // HA calls are best-effort when env vars are absent (local dev).
+    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+        reload_ha_config(&ha_url, &ha_token).await?;
+        trigger_manual_run(&ha_url, &ha_token).await?;
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SSR-only helpers (not server functions — called from within server fn bodies)
 // ---------------------------------------------------------------------------
@@ -163,6 +222,38 @@ async fn reload_ha_config(ha_url: &str, ha_token: &str) -> Result<(), ServerFnEr
     if !response.status().is_success() {
         return Err(ServerFnError::new(format!(
             "HA reload returned HTTP {}",
+            response.status()
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+async fn trigger_manual_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError> {
+    let url = format!(
+        "{}/api/services/irrigation_unlimited/manual_run",
+        ha_url.trim_end_matches('/')
+    );
+
+    // TODO: Don't hardcode entity IDs
+    let body = serde_json::json!({
+        "entity_id": "binary_sensor.irrigation_unlimited_c1_m",
+        "sequence_id": "manual"
+    });
+
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", format!("Bearer {ha_token}"))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| ServerFnError::new(format!("HA manual_run request failed: {e}")))?;
+
+    if !response.status().is_success() {
+        return Err(ServerFnError::new(format!(
+            "HA manual_run returned HTTP {}",
             response.status()
         )));
     }

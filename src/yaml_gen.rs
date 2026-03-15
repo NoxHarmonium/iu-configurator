@@ -42,6 +42,7 @@ struct IuSequence {
     name: String,
     sequence_id: String,
     delay: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     schedules: Vec<IuSchedule>,
     zones: Vec<IuSeqZone>,
 }
@@ -130,6 +131,19 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                 }
             }
 
+            // Manual sequence — no schedules, triggered via HA API only.
+            // Only emitted when at least one zone has a non-zero duration selected.
+            let manual_seq_zones = build_manual_seq_zones(ctrl.id, &schedule.manual_zones);
+            if !manual_seq_zones.is_empty() {
+                sequences.push(IuSequence {
+                    name: "Manual".into(),
+                    sequence_id: "manual".into(),
+                    delay: ctrl.delay_secs,
+                    schedules: vec![],
+                    zones: manual_seq_zones,
+                });
+            }
+
             IuController {
                 name: ctrl.name.to_string(),
                 preamble: ctrl.preamble_secs,
@@ -155,6 +169,30 @@ fn build_seq_zones(
             zone_schedules.get(z.id).and_then(|zs| {
                 let secs = get_secs(zs);
                 if zs.enabled && secs > 0 {
+                    Some(IuSeqZone {
+                        zone_id: z.id.to_string(),
+                        duration: format_duration(secs),
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+/// Build the sequence zone list for a manual run, including only zones that
+/// appear in `manual_zones` with a non-zero duration.
+fn build_manual_seq_zones(
+    controller_id: &str,
+    manual_zones: &HashMap<String, u32>,
+) -> Vec<IuSeqZone> {
+    ZONES
+        .iter()
+        .filter(|z| z.controller_id == controller_id)
+        .filter_map(|z| {
+            manual_zones.get(z.id).and_then(|&secs| {
+                if secs > 0 {
                     Some(IuSeqZone {
                         zone_id: z.id.to_string(),
                         duration: format_duration(secs),
