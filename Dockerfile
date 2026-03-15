@@ -1,11 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
-# cargo-leptos needs: Rust stable + wasm32 target + dart-sass + binaryen (wasm-opt)
-FROM --platform=$BUILDPLATFORM rust:1.94-trixie AS builder
-
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
+FROM rust:1.94-trixie AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
