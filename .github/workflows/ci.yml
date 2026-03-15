@@ -39,4 +39,26 @@ jobs:
       - name: Tests (ssr)
         run: cargo test --features ssr --no-default-features
 
-        # TODO: Do a cargo leptos build to verify that works - it might be really slow though
+  # ── Docker build check ───────────────────────────────────────────────────────
+  # Verifies the Dockerfile builds correctly on every PR without pushing.
+  # No registry credentials are required — `push: false` keeps everything local.
+  docker-build:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    # Only run on pull requests; tag-triggered CD handles the real publish.
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=ci-docker
+          cache-to: type=gha,mode=max,scope=ci-docker
