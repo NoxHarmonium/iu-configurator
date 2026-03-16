@@ -42,6 +42,10 @@ struct IuSequence {
     name: String,
     sequence_id: String,
     delay: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preamble: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postamble: Option<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     schedules: Vec<IuSchedule>,
     zones: Vec<IuSeqZone>,
@@ -103,6 +107,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                         name: "Morning".into(),
                         sequence_id: format!("{}_morning", ctrl.id),
                         delay: ctrl.delay_secs,
+                        preamble: None,
+                        postamble: None,
                         schedules: vec![IuSchedule {
                             name: "Morning".into(),
                             time: schedule.morning_time.clone(),
@@ -121,6 +127,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                         name: "Afternoon".into(),
                         sequence_id: format!("{}_afternoon", ctrl.id),
                         delay: ctrl.delay_secs,
+                        preamble: None,
+                        postamble: None,
                         schedules: vec![IuSchedule {
                             name: "Afternoon".into(),
                             time: schedule.afternoon_time.clone(),
@@ -139,6 +147,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                     name: "Manual".into(),
                     sequence_id: "manual".into(),
                     delay: ctrl.delay_secs,
+                    preamble: Some(0),
+                    postamble: Some(0),
                     schedules: vec![],
                     zones: manual_seq_zones,
                 });
@@ -367,6 +377,15 @@ mod tests {
         assert!(
             !yaml.contains("schedules:"),
             "manual sequence should have no schedules block"
+        );
+        // preamble/postamble should be 0 to suppress the controller-level values
+        assert!(
+            yaml.contains("preamble: 0"),
+            "manual sequence should have preamble: 0"
+        );
+        assert!(
+            yaml.contains("postamble: 0"),
+            "manual sequence should have postamble: 0"
         );
     }
 
