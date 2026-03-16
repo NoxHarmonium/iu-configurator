@@ -346,6 +346,15 @@ body {
     }
   }
 
+  &--danger {
+    background: $color-red;
+    color: $color-black;
+
+    &:hover:not(:disabled) {
+      background: $color-red-dark;
+    }
+  }
+
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
