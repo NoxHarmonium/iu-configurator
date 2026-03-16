@@ -198,6 +198,15 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     Ok(())
 }
 
+/// Cancel any currently running irrigation sequence on the main controller.
+#[server]
+pub async fn cancel_run() -> Result<(), ServerFnError> {
+    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+        cancel_ha_run(&ha_url, &ha_token).await?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SSR-only helpers (not server functions — called from within server fn bodies)
 // ---------------------------------------------------------------------------
@@ -254,6 +263,36 @@ async fn trigger_manual_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFn
     if !response.status().is_success() {
         return Err(ServerFnError::new(format!(
             "HA manual_run returned HTTP {}",
+            response.status()
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+async fn cancel_ha_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError> {
+    let url = format!(
+        "{}/api/services/irrigation_unlimited/cancel",
+        ha_url.trim_end_matches('/')
+    );
+
+    let body = serde_json::json!({
+        "entity_id": "binary_sensor.irrigation_unlimited_c1_m"
+    });
+
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", format!("Bearer {ha_token}"))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| ServerFnError::new(format!("HA cancel request failed: {e}")))?;
+
+    if !response.status().is_success() {
+        return Err(ServerFnError::new(format!(
+            "HA cancel returned HTTP {}",
             response.status()
         )));
     }

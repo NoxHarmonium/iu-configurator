@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use crate::{
     definitions::ZONES,
     pages::config::{mmss_to_secs, secs_to_mmss},
-    server_fns::{get_irrigation_status, get_schedule, run_manual, IrrigationStatus},
+    server_fns::{cancel_run, get_irrigation_status, get_schedule, run_manual, IrrigationStatus},
 };
 
 #[component]
@@ -55,6 +55,21 @@ pub fn RunPage() -> impl IntoView {
     let is_running = run_action.pending();
     let run_error = RwSignal::new(Option::<String>::None);
     let run_ok = RwSignal::new(false);
+
+    let cancel_action = Action::new(move |_: &()| async move { cancel_run().await });
+    let is_cancelling = cancel_action.pending();
+    let cancel_error = RwSignal::new(Option::<String>::None);
+
+    Effect::new(move |_| {
+        if let Some(result) = cancel_action.value().get() {
+            if let Err(e) = result {
+                cancel_error.set(Some(e.to_string()));
+            } else {
+                cancel_error.set(None);
+                status_res.refetch();
+            }
+        }
+    });
 
     Effect::new(move |_| {
         if let Some(result) = run_action.value().get() {
@@ -163,7 +178,7 @@ pub fn RunPage() -> impl IntoView {
                                     }).collect_view()}
                                 </div>
 
-                                // ── Run button ───────────────────────────────
+                                // ── Run / stop buttons ───────────────────────
                                 <div class="form-actions">
                                     <button
                                         type="button"
@@ -173,8 +188,19 @@ pub fn RunPage() -> impl IntoView {
                                     >
                                         {move || if is_running.get() { "Starting…" } else { "Force Run" }}
                                     </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn--danger"
+                                        prop:disabled=move || !is_active() || is_cancelling.get()
+                                        on:click=move |_| { cancel_action.dispatch(()); }
+                                    >
+                                        {move || if is_cancelling.get() { "Stopping…" } else { "⏹ Emergency Stop" }}
+                                    </button>
                                     {move || run_error.get().map(|e| view! {
                                         <p class="error">"Error: " {e}</p>
+                                    })}
+                                    {move || cancel_error.get().map(|e| view! {
+                                        <p class="error">"Stop error: " {e}</p>
                                     })}
                                     {move || run_ok.get().then(|| view! {
                                         <p class="success">"✓ Manual run triggered."</p>
