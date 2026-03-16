@@ -21,8 +21,10 @@ pub struct Schedule {
     /// Local time for afternoon watering, e.g. "15:00".
     pub afternoon_time: String,
     /// Days of week morning watering runs: subset of ["mon","tue","wed","thu","fri","sat","sun"].
+    #[serde(default)]
     pub morning_days: Vec<String>,
     /// Days of week afternoon watering runs.
+    #[serde(default)]
     pub afternoon_days: Vec<String>,
     /// Per-zone config keyed by zone_id (e.g. "zone_1").
     pub zones: HashMap<String, ZoneSchedule>,
