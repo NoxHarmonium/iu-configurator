@@ -4,6 +4,7 @@ $color-green-dark: #1f5a39;
 $color-green-light: #e8f5ee;
 $color-amber: #f59e0b;
 $color-red: #dc2626;
+$color-red-dark: #791f1f;
 $color-text: #1a1a1a;
 $color-muted: #6b7280;
 $color-border: #d1d5db;
@@ -348,7 +349,7 @@ body {
 
   &--danger {
     background: $color-red;
-    color: $color-black;
+    color: $color-text;
 
     &:hover:not(:disabled) {
       background: $color-red-dark;
