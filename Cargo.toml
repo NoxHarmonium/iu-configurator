@@ -1,6 +1,6 @@
 [package]
 name = "iu-configurator"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2021"
 
 [lib]
@@ -20,6 +20,9 @@ serde_json = { version = "1", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 anyhow = { version = "1", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+tower-http = { version = "0.6", features = ["trace"], optional = true }
 
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
@@ -41,6 +44,9 @@ ssr = [
     "dep:serde_yaml",
     "dep:anyhow",
     "dep:reqwest",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:tower-http",
 ]
 
 # Defines a size-optimized profile for the WASM bundle in release mode
@@ -54,6 +60,10 @@ panic = "abort"
 [package.metadata.leptos]
 # The name used by wasm-bindgen/cargo-leptos for the JS/WASM bundle. Defaults to the crate name
 output-name = "iu-configurator"
+
+# Append a content hash to JS/WASM/CSS filenames so each build gets a unique URL.
+# Prevents CDN/browser cache from serving a mismatched JS+WASM pair after a deploy.
+hash-files = true
 
 # The site root folder is where cargo-leptos generate all output. WARNING: all content of this folder will be erased on a rebuild. Use it in your server setup.
 site-root = "target/site"

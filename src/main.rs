@@ -3,14 +3,21 @@
 async fn main() {
     use axum::Router;
     use iu_configurator::app::*;
-    use leptos::logging::log;
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
+    use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+    use tracing::Level;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "iu_configurator=info,tower_http=info".into()),
+        )
+        .init();
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
-    // Generate the list of routes in your Leptos App
     let routes = generate_route_list(App);
 
     let app = Router::new()
@@ -19,11 +26,14 @@ async fn main() {
             move || shell(leptos_options.clone())
         })
         .fallback(leptos_axum::file_and_error_handler(shell))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(leptos_options);
 
-    // run our app with hyper
-    // `axum::Server` is a re-export of `hyper::Server`
-    log!("listening on http://{}", &addr);
+    tracing::info!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app.into_make_service())
         .await

@@ -32,12 +32,14 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
     let path = PathBuf::from(&config_dir).join("iu-schedule.json");
 
     if path.exists() {
+        tracing::info!(path = %path.display(), "loading schedule from file");
         let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to read iu-schedule.json: {e}")))?;
         serde_json::from_str(&content)
             .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))
     } else {
+        tracing::info!("no schedule file found, returning defaults");
         Ok(Schedule::default_seed())
     }
 }
@@ -76,9 +78,13 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
             ServerFnError::new(format!("Failed to write irrigation_unlimited.yaml: {e}"))
         })?;
 
+    tracing::info!("schedule saved, files written");
+
     // ── HA reload (best-effort) ────────────────────────────────────────────
     if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
         reload_ha_config(&ha_url, &ha_token).await?;
+    } else {
+        tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA reload");
     }
 
     Ok(())
@@ -151,8 +157,10 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 
     let has_zones = manual_zones.values().any(|&s| s > 0);
     if !has_zones {
+        tracing::warn!("run_manual called with no zones enabled");
         return Err(ServerFnError::new("No zones selected for manual run"));
     }
+    tracing::info!(zones = ?manual_zones, "starting manual run");
 
     let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
     let config_path = PathBuf::from(&config_dir);
@@ -193,6 +201,9 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
         reload_ha_config(&ha_url, &ha_token).await?;
         trigger_manual_run(&ha_url, &ha_token).await?;
+        tracing::info!("manual run triggered in HA");
+    } else {
+        tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA manual run");
     }
 
     Ok(())
@@ -201,8 +212,12 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 /// Cancel any currently running irrigation sequence on the main controller.
 #[server]
 pub async fn cancel_run() -> Result<(), ServerFnError> {
+    tracing::info!("cancel_run requested");
     if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
         cancel_ha_run(&ha_url, &ha_token).await?;
+        tracing::info!("irrigation cancelled in HA");
+    } else {
+        tracing::warn!("HA_URL/HA_TOKEN not set — cancel is a no-op");
     }
     Ok(())
 }
