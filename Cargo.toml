@@ -61,6 +61,10 @@ panic = "abort"
 # The name used by wasm-bindgen/cargo-leptos for the JS/WASM bundle. Defaults to the crate name
 output-name = "iu-configurator"
 
+# Append a content hash to JS/WASM/CSS filenames so each build gets a unique URL.
+# Prevents CDN/browser cache from serving a mismatched JS+WASM pair after a deploy.
+hash-files = true
+
 # The site root folder is where cargo-leptos generate all output. WARNING: all content of this folder will be erased on a rebuild. Use it in your server setup.
 site-root = "target/site"
 
