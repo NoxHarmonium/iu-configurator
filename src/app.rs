@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Title};
+use leptos_meta::{provide_meta_context, HashedStylesheet, MetaTags, Title};
 use leptos_router::{
     components::{Route, Router, Routes},
     StaticSegment,
@@ -8,18 +8,15 @@ use leptos_router::{
 use crate::pages::{config::ConfigPage, run::RunPage, schedule::SchedulePage};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
-    // When hash-files = true, cargo-leptos sets output_name to "iu-configurator-{hash}".
-    // Using it here ensures the CSS <link> always matches the JS/WASM from this build.
-    let css_href = format!("/pkg/{}.css", options.output_name);
     view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                <link rel="stylesheet" id="leptos" href=css_href/>
+                <HashedStylesheet options=options.clone()/>
                 <AutoReload options=options.clone() />
-                <HydrationScripts options/>
+                <HydrationScripts options=options.clone()/>
                 <MetaTags/>
             </head>
             <body>
