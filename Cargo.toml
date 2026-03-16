@@ -20,6 +20,9 @@ serde_json = { version = "1", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 anyhow = { version = "1", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+tower-http = { version = "0.6", features = ["trace"], optional = true }
 
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
@@ -41,6 +44,9 @@ ssr = [
     "dep:serde_yaml",
     "dep:anyhow",
     "dep:reqwest",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:tower-http",
 ]
 
 # Defines a size-optimized profile for the WASM bundle in release mode
