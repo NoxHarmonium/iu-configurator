@@ -55,8 +55,25 @@ jobs:
       # ── Docker Buildx ─────────────────────────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        id: setup-buildx
 
-      # ── Derive image labels (tags applied in the merge job) ──────────────────
+      - name: Cache Docker build mounts
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: cache-mount
+          key: cache-mount-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'Cargo.lock') }}
+          restore-keys: |
+            cache-mount-${{ matrix.arch }}-
+
+      - name: Restore Docker cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-dir: cache-mount
+          dockerfile: Dockerfile
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
