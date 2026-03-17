@@ -18,8 +18,8 @@ struct IuConfig {
 #[derive(Serialize)]
 struct IuController {
     name: String,
-    preamble: u32,
-    postamble: u32,
+    preamble: String,
+    postamble: String,
     zones: Vec<IuZone>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     sequences: Vec<IuSequence>,
@@ -36,11 +36,7 @@ struct IuZone {
 struct IuSequence {
     name: String,
     sequence_id: String,
-    delay: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    preamble: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    postamble: Option<u32>,
+    delay: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     schedules: Vec<IuSchedule>,
     zones: Vec<IuSeqZone>,
@@ -99,9 +95,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                     sequences.push(IuSequence {
                         name: "Morning".into(),
                         sequence_id: format!("{}_morning", ctrl.id),
-                        delay: ctrl.delay_secs,
-                        preamble: None,
-                        postamble: None,
+                        delay: format_duration(ctrl.delay_secs),
                         schedules: vec![IuSchedule {
                             name: "Morning".into(),
                             time: schedule.morning_time.clone(),
@@ -119,9 +113,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                     sequences.push(IuSequence {
                         name: "Afternoon".into(),
                         sequence_id: format!("{}_afternoon", ctrl.id),
-                        delay: ctrl.delay_secs,
-                        preamble: None,
-                        postamble: None,
+                        delay: format_duration(ctrl.delay_secs),
                         schedules: vec![IuSchedule {
                             name: "Afternoon".into(),
                             time: schedule.afternoon_time.clone(),
@@ -139,9 +131,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                 sequences.push(IuSequence {
                     name: "Manual".into(),
                     sequence_id: "manual".into(),
-                    delay: ctrl.delay_secs,
-                    preamble: Some(0),
-                    postamble: Some(0),
+                    delay: format_duration(ctrl.delay_secs),
                     schedules: vec![],
                     zones: manual_seq_zones,
                 });
@@ -149,8 +139,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             IuController {
                 name: ctrl.name.to_string(),
-                preamble: ctrl.preamble_secs,
-                postamble: ctrl.postamble_secs,
+                preamble: format_duration(ctrl.preamble_secs),
+                postamble: format_duration(ctrl.postamble_secs),
                 zones,
                 sequences,
             }
@@ -370,15 +360,6 @@ mod tests {
         assert!(
             !yaml.contains("schedules:"),
             "manual sequence should have no schedules block"
-        );
-        // preamble/postamble should be 0 to suppress the controller-level values
-        assert!(
-            yaml.contains("preamble: 0"),
-            "manual sequence should have preamble: 0"
-        );
-        assert!(
-            yaml.contains("postamble: 0"),
-            "manual sequence should have postamble: 0"
         );
     }
 
