@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use super::use_status_polling;
 use crate::{
     definitions::ZONES,
     server_fns::{get_irrigation_status, get_schedule, save_schedule, IrrigationStatus},
@@ -9,6 +10,7 @@ use crate::{
 pub fn ConfigPage() -> impl IntoView {
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
+    use_status_polling(move || status_res.refetch());
 
     // Local signals for form fields — populated from schedule_res
     let morning_time = RwSignal::new("07:00".to_string());

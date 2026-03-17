@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use super::use_status_polling;
 use crate::server_fns::{get_irrigation_status, get_schedule, save_schedule, IrrigationStatus};
 
 const DAYS: &[(&str, &str)] = &[
@@ -17,6 +18,7 @@ pub fn SchedulePage() -> impl IntoView {
     // ── Remote data ──────────────────────────────────────────────────────────
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
+    use_status_polling(move || status_res.refetch());
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
     let morning_days: RwSignal<Vec<String>> = RwSignal::new(vec![]);
