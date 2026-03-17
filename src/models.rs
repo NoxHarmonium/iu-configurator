@@ -20,7 +20,10 @@ fn default_period_days() -> u32 {
 /// Per-zone dynamic schedule data — stored in iu-schedule.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneSchedule {
-    pub enabled: bool,
+    /// Whether this zone runs in the morning session.
+    pub morning_enabled: bool,
+    /// Whether this zone runs in the afternoon session.
+    pub afternoon_enabled: bool,
     /// Duration in seconds for the morning watering session.
     pub morning_secs: u32,
     /// Duration in seconds for the afternoon watering session.
@@ -35,12 +38,9 @@ pub struct Schedule {
     pub morning_time: String,
     /// Local time for afternoon watering, e.g. "15:00".
     pub afternoon_time: String,
-    /// Days of week morning watering runs: subset of ["mon","tue","wed","thu","fri","sat","sun"].
+    /// Days of week that watering runs: subset of ["mon","tue","wed","thu","fri","sat","sun"].
     #[serde(default)]
-    pub morning_days: Vec<String>,
-    /// Days of week afternoon watering runs.
-    #[serde(default)]
-    pub afternoon_days: Vec<String>,
+    pub active_days: Vec<String>,
     /// Per-zone config keyed by zone_id (e.g. "zone_1").
     pub zones: HashMap<String, ZoneSchedule>,
     /// Zones selected for the next manual run, keyed by zone_id → duration in seconds.
@@ -69,7 +69,8 @@ impl Schedule {
         zones.insert(
             "zone_1".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 60,
                 afternoon_secs: 60,
             },
@@ -77,7 +78,8 @@ impl Schedule {
         zones.insert(
             "zone_2".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 30,
                 afternoon_secs: 30,
             },
@@ -85,7 +87,8 @@ impl Schedule {
         zones.insert(
             "zone_3".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 1200,
                 afternoon_secs: 1200,
             },
@@ -94,7 +97,8 @@ impl Schedule {
         zones.insert(
             "zone_4".into(),
             ZoneSchedule {
-                enabled: false,
+                morning_enabled: false,
+                afternoon_enabled: false,
                 morning_secs: 300,
                 afternoon_secs: 300,
             },
@@ -104,7 +108,8 @@ impl Schedule {
         zones.insert(
             "zone_5".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 180,
                 afternoon_secs: 180,
             },
@@ -112,7 +117,8 @@ impl Schedule {
         zones.insert(
             "zone_6".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 600,
                 afternoon_secs: 600,
             },
@@ -120,7 +126,8 @@ impl Schedule {
         zones.insert(
             "zone_7".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 600,
                 afternoon_secs: 600,
             },
@@ -128,7 +135,8 @@ impl Schedule {
         zones.insert(
             "zone_8".into(),
             ZoneSchedule {
-                enabled: true,
+                morning_enabled: true,
+                afternoon_enabled: true,
                 morning_secs: 600,
                 afternoon_secs: 600,
             },
@@ -137,8 +145,7 @@ impl Schedule {
         Schedule {
             morning_time: "07:00".into(),
             afternoon_time: "15:00".into(),
-            morning_days: Vec::new(),   // all off until user enables
-            afternoon_days: Vec::new(), // all off until user enables
+            active_days: Vec::new(), // all off until user enables
             zones,
             manual_zones: HashMap::new(),
             schedule_mode: ScheduleMode::Weekday,

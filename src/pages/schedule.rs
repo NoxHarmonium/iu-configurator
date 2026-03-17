@@ -22,8 +22,7 @@ pub fn SchedulePage() -> impl IntoView {
     use_status_polling(move || status_res.refetch());
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
-    let morning_days: RwSignal<Vec<String>> = RwSignal::new(vec![]);
-    let afternoon_days: RwSignal<Vec<String>> = RwSignal::new(vec![]);
+    let active_days: RwSignal<Vec<String>> = RwSignal::new(vec![]);
     let schedule_mode: RwSignal<ScheduleMode> = RwSignal::new(ScheduleMode::Weekday);
     let period_anchor: RwSignal<String> = RwSignal::new(String::new());
     let period_days: RwSignal<u32> = RwSignal::new(2);
@@ -31,8 +30,7 @@ pub fn SchedulePage() -> impl IntoView {
     // Populate signals when schedule data arrives
     Effect::new(move |_| {
         if let Some(Ok(s)) = schedule_res.get() {
-            morning_days.set(s.morning_days.clone());
-            afternoon_days.set(s.afternoon_days.clone());
+            active_days.set(s.active_days.clone());
             schedule_mode.set(s.schedule_mode.clone());
             period_anchor.set(s.period_anchor.clone());
             period_days.set(s.period_days);
@@ -41,8 +39,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Save action ───────────────────────────────────────────────────────────
     let save_action = Action::new(move |_: &()| {
-        let m = morning_days.get();
-        let a = afternoon_days.get();
+        let a = active_days.get();
         let mode = schedule_mode.get();
         let anchor = period_anchor.get();
         let days = period_days.get();
@@ -50,8 +47,7 @@ pub fn SchedulePage() -> impl IntoView {
             // Read the full schedule from server, then patch just the day fields.
             match get_schedule().await {
                 Ok(mut s) => {
-                    s.morning_days = m;
-                    s.afternoon_days = a;
+                    s.active_days = a;
                     s.schedule_mode = mode;
                     s.period_anchor = anchor;
                     s.period_days = days;
@@ -91,8 +87,8 @@ pub fn SchedulePage() -> impl IntoView {
     };
 
     // ── Day toggle helper ─────────────────────────────────────────────────────
-    let toggle_day = move |signal: RwSignal<Vec<String>>, day: &'static str, checked: bool| {
-        signal.update(|days| {
+    let toggle_day = move |day: &'static str, checked: bool| {
+        active_days.update(|days| {
             if checked {
                 if !days.contains(&day.to_string()) {
                     days.push(day.to_string());
@@ -171,8 +167,7 @@ pub fn SchedulePage() -> impl IntoView {
                                         <div class="day-grid">
                                             <div class="day-grid__header">
                                                 <span></span>
-                                                <span class="day-grid__session-label">"Morning"</span>
-                                                <span class="day-grid__session-label">"Afternoon"</span>
+                                                <span class="day-grid__session-label">"Enabled"</span>
                                             </div>
                                             {DAYS.iter().map(|(key, label)| {
                                                 let key = *key;
@@ -181,31 +176,16 @@ pub fn SchedulePage() -> impl IntoView {
                                                     <div class="day-grid__row">
                                                         <span class="day-grid__day-label">{label}</span>
 
-                                                        // Morning toggle
+                                                        // Day toggle
                                                         <label class="toggle">
                                                             <input
                                                                 type="checkbox"
                                                                 class="toggle__input"
-                                                                prop:checked=move || morning_days.get().contains(&key.to_string())
+                                                                prop:checked=move || active_days.get().contains(&key.to_string())
                                                                 prop:disabled=move || is_active() || is_saving.get()
                                                                 on:change=move |ev| {
                                                                     let checked = event_target_checked(&ev);
-                                                                    toggle_day(morning_days, key, checked);
-                                                                }
-                                                            />
-                                                            <span class="toggle__slider"></span>
-                                                        </label>
-
-                                                        // Afternoon toggle
-                                                        <label class="toggle">
-                                                            <input
-                                                                type="checkbox"
-                                                                class="toggle__input"
-                                                                prop:checked=move || afternoon_days.get().contains(&key.to_string())
-                                                                prop:disabled=move || is_active() || is_saving.get()
-                                                                on:change=move |ev| {
-                                                                    let checked = event_target_checked(&ev);
-                                                                    toggle_day(afternoon_days, key, checked);
+                                                                    toggle_day(key, checked);
                                                                 }
                                                             />
                                                             <span class="toggle__slider"></span>
