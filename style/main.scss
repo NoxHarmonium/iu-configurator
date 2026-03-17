@@ -317,6 +317,27 @@ body {
   }
 }
 
+// ── Periodic schedule form ────────────────────────────────────────────────────
+.periodic-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.schedule-mode {
+  background: $color-white;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: $shadow;
+
+  select.field-row__input {
+    width: auto;
+    min-width: 160px;
+  }
+}
+
 // ── Form actions ──────────────────────────────────────────────────────────────
 .form-actions {
   display: flex;

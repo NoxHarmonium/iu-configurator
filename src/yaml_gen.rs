@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
+use chrono::{Duration, Local};
 use serde::Serialize;
 
 use crate::definitions::{CONTROLLERS, ZONES};
-use crate::models::{Schedule, ZoneSchedule};
+use crate::models::{PeriodicSchedule, Schedule, ZoneSchedule};
 
 // ---------------------------------------------------------------------------
 // Structures that mirror the irrigation_unlimited YAML schema.
@@ -48,6 +49,10 @@ struct IuSchedule {
     time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     weekday: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    every_n_days: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -116,38 +121,46 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             let mut sequences = Vec::new();
 
-            // Morning sequence — only emitted when at least one day is selected
-            // and at least one enabled zone exists for this controller.
-            if !schedule.morning_days.is_empty() {
+            // Morning sequence — only emitted when at least one day is selected (days-of-week
+            // mode) or a periodic schedule is configured, and at least one enabled zone exists.
+            let morning_active =
+                schedule.morning_periodic.is_some() || !schedule.morning_days.is_empty();
+            if morning_active {
                 let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.morning_secs);
                 if !seq_zones.is_empty() {
+                    let morning_schedule = build_iu_schedule(
+                        "Morning",
+                        &schedule.morning_time,
+                        schedule.morning_periodic.as_ref(),
+                        &schedule.morning_days,
+                    );
                     sequences.push(IuSequence {
                         name: "Morning".into(),
                         sequence_id: format!("{}_morning", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Morning".into(),
-                            time: schedule.morning_time.clone(),
-                            weekday: weekday_filter(&schedule.morning_days),
-                        }],
+                        schedules: vec![morning_schedule],
                         zones: seq_zones,
                     });
                 }
             }
 
             // Afternoon sequence
-            if !schedule.afternoon_days.is_empty() {
+            let afternoon_active =
+                schedule.afternoon_periodic.is_some() || !schedule.afternoon_days.is_empty();
+            if afternoon_active {
                 let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.afternoon_secs);
                 if !seq_zones.is_empty() {
+                    let afternoon_schedule = build_iu_schedule(
+                        "Afternoon",
+                        &schedule.afternoon_time,
+                        schedule.afternoon_periodic.as_ref(),
+                        &schedule.afternoon_days,
+                    );
                     sequences.push(IuSequence {
                         name: "Afternoon".into(),
                         sequence_id: format!("{}_afternoon", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Afternoon".into(),
-                            time: schedule.afternoon_time.clone(),
-                            weekday: weekday_filter(&schedule.afternoon_days),
-                        }],
+                        schedules: vec![afternoon_schedule],
                         zones: seq_zones,
                     });
                 }
@@ -227,6 +240,41 @@ fn build_manual_seq_zones(
         .collect()
 }
 
+/// Build an `IuSchedule` for a watering session.
+///
+/// When `periodic` is `Some`, emits `every_n_days` and a computed `start` date
+/// instead of a `weekday` filter.  When `periodic` is `None`, falls back to
+/// the days-of-week approach.
+fn build_iu_schedule(
+    name: &str,
+    time: &str,
+    periodic: Option<&PeriodicSchedule>,
+    days: &[String],
+) -> IuSchedule {
+    match periodic {
+        Some(p) => {
+            let start_date = (Local::now().date_naive()
+                + Duration::days(p.start_day_offset as i64))
+            .format("%Y-%m-%d")
+            .to_string();
+            IuSchedule {
+                name: name.to_string(),
+                time: time.to_string(),
+                weekday: None,
+                every_n_days: Some(p.repeat_days),
+                start: Some(start_date),
+            }
+        }
+        None => IuSchedule {
+            name: name.to_string(),
+            time: time.to_string(),
+            weekday: weekday_filter(days),
+            every_n_days: None,
+            start: None,
+        },
+    }
+}
+
 /// Returns `None` (omitting the YAML field) when all seven days are selected,
 /// since IU's default is to run every day when weekday is absent.
 fn weekday_filter(days: &[String]) -> Option<Vec<String>> {
@@ -252,7 +300,7 @@ fn format_duration(secs: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Schedule;
+    use crate::models::{PeriodicSchedule, Schedule};
 
     #[test]
     fn test_format_duration() {
@@ -417,5 +465,152 @@ mod tests {
 
         let yaml = generate_yaml(&schedule).unwrap();
         println!("\n--- Sample YAML ---\n{yaml}\n---");
+    }
+
+    #[test]
+    fn test_periodic_morning_emits_every_n_days() {
+        let mut schedule = Schedule::default_seed();
+        schedule.morning_periodic = Some(PeriodicSchedule {
+            start_day_offset: 0,
+            repeat_days: 3,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("every_n_days: 3"),
+            "missing every_n_days in periodic morning schedule"
+        );
+        assert!(
+            yaml.contains("main_morning"),
+            "missing main_morning sequence_id"
+        );
+        assert!(
+            !yaml.contains("weekday:"),
+            "weekday should not appear in periodic mode"
+        );
+        assert!(
+            yaml.contains("start:"),
+            "missing start date in periodic mode"
+        );
+    }
+
+    #[test]
+    fn test_periodic_afternoon_emits_every_n_days() {
+        let mut schedule = Schedule::default_seed();
+        schedule.afternoon_periodic = Some(PeriodicSchedule {
+            start_day_offset: 2,
+            repeat_days: 7,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("every_n_days: 7"),
+            "missing every_n_days in periodic afternoon schedule"
+        );
+        assert!(
+            yaml.contains("main_afternoon"),
+            "missing main_afternoon sequence_id"
+        );
+    }
+
+    #[test]
+    fn test_periodic_start_offset_zero_uses_today() {
+        let mut schedule = Schedule::default_seed();
+        schedule.morning_periodic = Some(PeriodicSchedule {
+            start_day_offset: 0,
+            repeat_days: 2,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        let today = chrono::Local::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(
+            yaml.contains(&today),
+            "start date should be today when offset is 0"
+        );
+    }
+
+    #[test]
+    fn test_periodic_start_offset_adds_days() {
+        let mut schedule = Schedule::default_seed();
+        schedule.morning_periodic = Some(PeriodicSchedule {
+            start_day_offset: 5,
+            repeat_days: 2,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        let expected = (chrono::Local::now().date_naive() + chrono::Duration::days(5))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(
+            yaml.contains(&expected),
+            "start date should be 5 days from today"
+        );
+    }
+
+    #[test]
+    fn test_periodic_overrides_days_of_week() {
+        let mut schedule = Schedule::default_seed();
+        // Set both periodic and days-of-week; periodic should take precedence.
+        schedule.morning_days = vec!["mon".into(), "wed".into()];
+        schedule.morning_periodic = Some(PeriodicSchedule {
+            start_day_offset: 1,
+            repeat_days: 4,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("every_n_days: 4"),
+            "periodic should override days-of-week"
+        );
+        assert!(
+            !yaml.contains("weekday:"),
+            "weekday should not appear when periodic is set"
+        );
+    }
+
+    #[test]
+    fn test_days_of_week_used_when_no_periodic() {
+        let mut schedule = Schedule::default_seed();
+        schedule.morning_days = vec!["mon".into(), "wed".into()];
+        // morning_periodic is None (default)
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            yaml.contains("weekday:"),
+            "weekday should be used when no periodic"
+        );
+        assert!(
+            !yaml.contains("every_n_days"),
+            "every_n_days should not appear"
+        );
+    }
+
+    #[test]
+    fn test_periodic_no_sequence_when_no_enabled_zones() {
+        let mut schedule = Schedule::default_seed();
+        // Disable all zones
+        for zone in schedule.zones.values_mut() {
+            zone.enabled = false;
+        }
+        schedule.morning_periodic = Some(PeriodicSchedule {
+            start_day_offset: 0,
+            repeat_days: 2,
+        });
+
+        let yaml = generate_yaml(&schedule).unwrap();
+
+        assert!(
+            !yaml.contains("sequences"),
+            "no sequences should be emitted when all zones disabled"
+        );
     }
 }

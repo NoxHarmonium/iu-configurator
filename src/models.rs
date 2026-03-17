@@ -12,6 +12,19 @@ pub struct ZoneSchedule {
     pub afternoon_secs: u32,
 }
 
+/// A "every N days" periodic schedule — an alternative to days-of-week scheduling.
+///
+/// The `start_day_offset` is the number of days from the current date when the
+/// schedule should start (0 = start today, 1 = start tomorrow, etc.).
+/// At YAML generation time this offset is resolved to an absolute `YYYY-MM-DD` date.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PeriodicSchedule {
+    /// Days from today when watering should first occur (must be >= 0).
+    pub start_day_offset: u32,
+    /// How many days between each watering cycle (must be >= 1).
+    pub repeat_days: u32,
+}
+
 /// The full schedule state — the only thing persisted to disk and sent over
 /// the wire between client and server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,11 +34,19 @@ pub struct Schedule {
     /// Local time for afternoon watering, e.g. "15:00".
     pub afternoon_time: String,
     /// Days of week morning watering runs: subset of ["mon","tue","wed","thu","fri","sat","sun"].
+    /// Used when `morning_periodic` is `None`.
     #[serde(default)]
     pub morning_days: Vec<String>,
     /// Days of week afternoon watering runs.
+    /// Used when `afternoon_periodic` is `None`.
     #[serde(default)]
     pub afternoon_days: Vec<String>,
+    /// Periodic schedule for morning watering. When `Some`, overrides `morning_days`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub morning_periodic: Option<PeriodicSchedule>,
+    /// Periodic schedule for afternoon watering. When `Some`, overrides `afternoon_days`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub afternoon_periodic: Option<PeriodicSchedule>,
     /// Per-zone config keyed by zone_id (e.g. "zone_1").
     pub zones: HashMap<String, ZoneSchedule>,
     /// Zones selected for the next manual run, keyed by zone_id → duration in seconds.
@@ -115,6 +136,8 @@ impl Schedule {
             afternoon_time: "15:00".into(),
             morning_days: Vec::new(),   // all off until user enables
             afternoon_days: Vec::new(), // all off until user enables
+            morning_periodic: None,
+            afternoon_periodic: None,
             zones,
             manual_zones: HashMap::new(),
         }
