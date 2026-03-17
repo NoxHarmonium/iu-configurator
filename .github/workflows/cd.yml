@@ -42,7 +42,7 @@ jobs:
       #                         ecr-public:PutImage / ecr-public:InitiateLayerUpload /
       #                         ecr-public:UploadLayerPart / ecr-public:CompleteLayerUpload
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1 # ECR Public is always in us-east-1
@@ -128,7 +128,7 @@ jobs:
           merge-multiple: true
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
