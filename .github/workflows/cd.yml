@@ -33,7 +33,7 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── AWS auth ─────────────────────────────────────────────────────────────
       # Expects OIDC-based auth. Add these secrets to your repo:
@@ -42,7 +42,7 @@ jobs:
       #                         ecr-public:PutImage / ecr-public:InitiateLayerUpload /
       #                         ecr-public:UploadLayerPart / ecr-public:CompleteLayerUpload
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1 # ECR Public is always in us-east-1
@@ -54,11 +54,11 @@ jobs:
 
       # ── Docker Buildx ─────────────────────────────────────────────────────────
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         id: setup-buildx
 
       - name: Cache Docker build mounts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache
         with:
           path: cache-mount
@@ -76,14 +76,14 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.ECR_REPOSITORY }}
 
       # ── Build & push by digest (no tag — tag is applied in the merge job) ────
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -101,7 +101,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -121,14 +121,14 @@ jobs:
 
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-*
           merge-multiple: true
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
@@ -139,12 +139,12 @@ jobs:
           registry-type: public
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ── Derive final image tags ───────────────────────────────────────────────
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.ECR_REPOSITORY }}
           tags: |
