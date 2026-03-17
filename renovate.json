@@ -1,6 +1,36 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
+  "extends": ["config:recommended"],
+  "timezone": "Australia/Melbourne",
+  "schedule": ["after 2am", "before 6am"],
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "rust: minor/patch dependencies",
+      "groupSlug": "rust-minor"
+    },
+    {
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "rust: major dependencies",
+      "groupSlug": "rust-major"
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "dockerfile base image",
+      "groupSlug": "dockerfile"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["end2end/**"],
+      "groupName": "end2end dependencies",
+      "groupSlug": "end2end"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions"
+    }
   ]
 }
