@@ -37,8 +37,8 @@ pub struct ZoneDef {
 pub static CONTROLLERS: &[ControllerDef] = &[ControllerDef {
     id: "main",
     name: "Irrigation",
-    preamble_secs: 5,
-    postamble_secs: 5,
+    preamble_secs: 15,
+    postamble_secs: 15,
     delay_secs: 5,
     ha_master_entity: "binary_sensor.irrigation_unlimited_c1_m",
 }];
