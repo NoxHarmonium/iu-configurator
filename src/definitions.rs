@@ -1,3 +1,10 @@
+/// Interval in milliseconds at which the UI polls Home Assistant for the current
+/// irrigation status. Lower values give faster UI updates at the cost of more HA API calls.
+///
+/// Because polling runs in the browser (WASM), this cannot be a runtime environment variable —
+/// change this value directly to adjust the poll frequency.
+pub const STATUS_POLL_INTERVAL_MS: u64 = 5_000;
+
 /// Static definition of an irrigation controller.
 /// These values never change via the UI; they live here as a single source of truth.
 pub struct ControllerDef {
@@ -30,8 +37,8 @@ pub struct ZoneDef {
 pub static CONTROLLERS: &[ControllerDef] = &[ControllerDef {
     id: "main",
     name: "Irrigation",
-    preamble_secs: 5,
-    postamble_secs: 5,
+    preamble_secs: 15,
+    postamble_secs: 15,
     delay_secs: 5,
     ha_master_entity: "binary_sensor.irrigation_unlimited_c1_m",
 }];

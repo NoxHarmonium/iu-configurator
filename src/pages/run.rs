@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use leptos::prelude::*;
 
+use super::use_status_polling;
 use crate::{
     definitions::ZONES,
     pages::config::{mmss_to_secs, secs_to_mmss},
@@ -12,6 +13,7 @@ use crate::{
 pub fn RunPage() -> impl IntoView {
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
+    use_status_polling(move || status_res.refetch());
 
     // Per-zone signals: enabled (toggle) and duration string (MM:SS)
     let zone_enabled: Vec<RwSignal<bool>> = ZONES.iter().map(|_| RwSignal::new(false)).collect();
@@ -77,6 +79,7 @@ pub fn RunPage() -> impl IntoView {
                 Ok(_) => {
                     run_error.set(None);
                     run_ok.set(true);
+                    status_res.refetch();
                 }
                 Err(e) => {
                     run_error.set(Some(e.to_string()));
@@ -99,7 +102,7 @@ pub fn RunPage() -> impl IntoView {
             <h1 class="page__title">"Force Run"</h1>
 
             // ── Status banner ────────────────────────────────────────────────
-            <Suspense fallback=|| ()>
+            <Transition fallback=|| ()>
                 {move || {
                     status_res.get().map(|result| {
                         match result {
@@ -117,10 +120,10 @@ pub fn RunPage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
 
             // ── Zone table ───────────────────────────────────────────────────
-            <Suspense fallback=|| view! { <p class="loading">"Loading zones…"</p> }>
+            <Transition fallback=|| view! { <p class="loading">"Loading zones…"</p> }>
                 {move || {
                     schedule_res.get().map(|result| match result {
                         Err(e) => view! {
@@ -210,7 +213,7 @@ pub fn RunPage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
         </div>
     }
 }

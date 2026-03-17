@@ -63,7 +63,36 @@ struct IuSeqZone {
 /// Generate an `irrigation_unlimited` YAML string from the active schedule.
 pub fn generate_yaml(schedule: &Schedule) -> Result<String, serde_yaml::Error> {
     let controllers = build_controllers(schedule);
-    serde_yaml::to_string(&IuConfig { controllers })
+    let yaml = serde_yaml::to_string(&IuConfig { controllers })?;
+    // serde_yaml targets YAML 1.2 and leaves "HH:MM" unquoted, but Home
+    // Assistant uses PyYAML which defaults to YAML 1.1 where bare "HH:MM"
+    // scalars are interpreted as sexagesimal numbers.  Quote them explicitly.
+    Ok(quote_time_fields(yaml))
+}
+
+/// Wrap bare `time:` scalar values in single quotes.
+/// TODO: There has to be a better way than this!
+fn quote_time_fields(yaml: String) -> String {
+    let trailing_newline = yaml.ends_with('\n');
+    let mut result = yaml
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if let Some(value_part) = trimmed.strip_prefix("time:") {
+                let value = value_part.trim();
+                if !value.is_empty() && !value.starts_with('\'') && !value.starts_with('"') {
+                    let indent = &line[..line.len() - trimmed.len()];
+                    return format!("{}time: '{}'", indent, value);
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if trailing_newline {
+        result.push('\n');
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
