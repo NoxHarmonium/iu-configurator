@@ -16,6 +16,20 @@ const DAYS: &[(&str, &str)] = &[
     ("sun", "Sunday"),
 ];
 
+/// Returns `true` if `s` is a well-formed `YYYY-MM-DD` date string.
+/// (The HTML date input always produces this format when non-empty.)
+fn is_valid_date(s: &str) -> bool {
+    if s.len() != 10 {
+        return false;
+    }
+    let bytes = s.as_bytes();
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[..4].iter().all(u8::is_ascii_digit)
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[8..].iter().all(u8::is_ascii_digit)
+}
+
 /// Which method is being used to specify the watering schedule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScheduleMode {
@@ -37,10 +51,10 @@ pub fn SchedulePage() -> impl IntoView {
     // Schedule mode — derived from loaded schedule, then user-controlled.
     let schedule_mode: RwSignal<ScheduleMode> = RwSignal::new(ScheduleMode::WeekDays);
 
-    // Periodic schedule inputs (days from today and repeat interval).
-    let morning_start_offset: RwSignal<String> = RwSignal::new("0".into());
+    // Periodic schedule inputs: an absolute start date (YYYY-MM-DD) and repeat interval.
+    let morning_start_date: RwSignal<String> = RwSignal::new("".into());
     let morning_repeat_days: RwSignal<String> = RwSignal::new("3".into());
-    let afternoon_start_offset: RwSignal<String> = RwSignal::new("0".into());
+    let afternoon_start_date: RwSignal<String> = RwSignal::new("".into());
     let afternoon_repeat_days: RwSignal<String> = RwSignal::new("3".into());
 
     // Populate signals when schedule data arrives
@@ -56,25 +70,25 @@ pub fn SchedulePage() -> impl IntoView {
             match (&s.morning_periodic, &s.afternoon_periodic) {
                 (Some(m), Some(a)) => {
                     schedule_mode.set(ScheduleMode::Periodic);
-                    morning_start_offset.set(m.start_day_offset.to_string());
+                    morning_start_date.set(m.start_date.clone());
                     morning_repeat_days.set(m.repeat_days.to_string());
-                    afternoon_start_offset.set(a.start_day_offset.to_string());
+                    afternoon_start_date.set(a.start_date.clone());
                     afternoon_repeat_days.set(a.repeat_days.to_string());
                 }
                 (Some(m), None) => {
                     schedule_mode.set(ScheduleMode::Periodic);
-                    morning_start_offset.set(m.start_day_offset.to_string());
+                    morning_start_date.set(m.start_date.clone());
                     morning_repeat_days.set(m.repeat_days.to_string());
                     // Mirror morning values to afternoon as a sensible default.
-                    afternoon_start_offset.set(m.start_day_offset.to_string());
+                    afternoon_start_date.set(m.start_date.clone());
                     afternoon_repeat_days.set(m.repeat_days.to_string());
                 }
                 (None, Some(a)) => {
                     schedule_mode.set(ScheduleMode::Periodic);
-                    afternoon_start_offset.set(a.start_day_offset.to_string());
+                    afternoon_start_date.set(a.start_date.clone());
                     afternoon_repeat_days.set(a.repeat_days.to_string());
                     // Mirror afternoon values to morning as a sensible default.
-                    morning_start_offset.set(a.start_day_offset.to_string());
+                    morning_start_date.set(a.start_date.clone());
                     morning_repeat_days.set(a.repeat_days.to_string());
                 }
                 (None, None) => {}
@@ -83,14 +97,18 @@ pub fn SchedulePage() -> impl IntoView {
     });
 
     // ── Validation ────────────────────────────────────────────────────────────
+    // Returns `Some(error_message)` if the periodic inputs are invalid.
     let validate_periodic = move || -> Option<String> {
+        let m_date = morning_start_date.get();
         let m_repeat = morning_repeat_days.get();
+        let a_date = afternoon_start_date.get();
         let a_repeat = afternoon_repeat_days.get();
-        let m_offset = morning_start_offset.get();
-        let a_offset = afternoon_start_offset.get();
 
-        if m_offset.parse::<u32>().is_err() {
-            return Some("Morning start offset must be a non-negative whole number.".into());
+        if m_date.trim().is_empty() {
+            return Some("Morning start date must be set.".into());
+        }
+        if !is_valid_date(m_date.trim()) {
+            return Some("Morning start date must be a valid date (YYYY-MM-DD).".into());
         }
         match m_repeat.parse::<u32>() {
             Ok(0) => return Some("Morning repeat interval must be at least 1 day.".into()),
@@ -99,8 +117,11 @@ pub fn SchedulePage() -> impl IntoView {
             }
             Ok(_) => {}
         }
-        if a_offset.parse::<u32>().is_err() {
-            return Some("Afternoon start offset must be a non-negative whole number.".into());
+        if a_date.trim().is_empty() {
+            return Some("Afternoon start date must be set.".into());
+        }
+        if !is_valid_date(a_date.trim()) {
+            return Some("Afternoon start date must be a valid date (YYYY-MM-DD).".into());
         }
         match a_repeat.parse::<u32>() {
             Ok(0) => return Some("Afternoon repeat interval must be at least 1 day.".into()),
@@ -117,9 +138,9 @@ pub fn SchedulePage() -> impl IntoView {
         let mode = schedule_mode.get();
         let m = morning_days.get();
         let a = afternoon_days.get();
-        let m_offset = morning_start_offset.get();
+        let m_date = morning_start_date.get();
         let m_repeat = morning_repeat_days.get();
-        let a_offset = afternoon_start_offset.get();
+        let a_date = afternoon_start_date.get();
         let a_repeat = afternoon_repeat_days.get();
         async move {
             // Read the full schedule from server, then patch just the day fields.
@@ -133,11 +154,15 @@ pub fn SchedulePage() -> impl IntoView {
                             s.afternoon_periodic = None;
                         }
                         ScheduleMode::Periodic => {
-                            let m_start: u32 = m_offset.parse().map_err(|_| {
-                                ServerFnError::new(
-                                    "Morning start offset must be a non-negative whole number.",
-                                )
-                            })?;
+                            let m_start = m_date.trim().to_string();
+                            if m_start.is_empty() {
+                                return Err(ServerFnError::new("Morning start date must be set."));
+                            }
+                            if !is_valid_date(&m_start) {
+                                return Err(ServerFnError::new(
+                                    "Morning start date must be a valid date (YYYY-MM-DD).",
+                                ));
+                            }
                             let m_repeat_val: u32 = m_repeat.parse().map_err(|_| {
                                 ServerFnError::new(
                                     "Morning repeat interval must be a positive whole number.",
@@ -148,11 +173,17 @@ pub fn SchedulePage() -> impl IntoView {
                                     "Morning repeat interval must be at least 1 day.",
                                 ));
                             }
-                            let a_start: u32 = a_offset.parse().map_err(|_| {
-                                ServerFnError::new(
-                                    "Afternoon start offset must be a non-negative whole number.",
-                                )
-                            })?;
+                            let a_start = a_date.trim().to_string();
+                            if a_start.is_empty() {
+                                return Err(ServerFnError::new(
+                                    "Afternoon start date must be set.",
+                                ));
+                            }
+                            if !is_valid_date(&a_start) {
+                                return Err(ServerFnError::new(
+                                    "Afternoon start date must be a valid date (YYYY-MM-DD).",
+                                ));
+                            }
                             let a_repeat_val: u32 = a_repeat.parse().map_err(|_| {
                                 ServerFnError::new(
                                     "Afternoon repeat interval must be a positive whole number.",
@@ -166,11 +197,11 @@ pub fn SchedulePage() -> impl IntoView {
                             s.morning_days = vec![];
                             s.afternoon_days = vec![];
                             s.morning_periodic = Some(PeriodicSchedule {
-                                start_day_offset: m_start,
+                                start_date: m_start,
                                 repeat_days: m_repeat_val,
                             });
                             s.afternoon_periodic = Some(PeriodicSchedule {
-                                start_day_offset: a_start,
+                                start_date: a_start,
                                 repeat_days: a_repeat_val,
                             });
                         }
@@ -347,15 +378,14 @@ pub fn SchedulePage() -> impl IntoView {
                                         <div class="config-section">
                                             <h3 class="config-section__title">"Morning"</h3>
                                             <div class="field-row">
-                                                <label class="field-row__label">"Start in (days)"</label>
+                                                <label class="field-row__label">"Start date"</label>
                                                 <input
-                                                    type="number"
-                                                    class="field-row__input"
-                                                    min="0"
-                                                    prop:value=move || morning_start_offset.get()
+                                                    type="date"
+                                                    class="field-row__input field-row__input--date"
+                                                    prop:value=move || morning_start_date.get()
                                                     prop:disabled=move || is_active() || is_saving.get()
                                                     on:input=move |ev| {
-                                                        morning_start_offset.set(event_target_value(&ev));
+                                                        morning_start_date.set(event_target_value(&ev));
                                                         save_ok.set(false);
                                                     }
                                                 />
@@ -374,20 +404,29 @@ pub fn SchedulePage() -> impl IntoView {
                                                     }
                                                 />
                                             </div>
+                                            {move || {
+                                                let date = morning_start_date.get();
+                                                let repeat = morning_repeat_days.get();
+                                                let repeat_days = repeat.parse::<u32>().unwrap_or(0);
+                                                (!date.is_empty() && repeat_days > 0).then(|| view! {
+                                                    <p class="hint">
+                                                        "Starting " {date} ", then every " {repeat_days.to_string()} " days."
+                                                    </p>
+                                                })
+                                            }}
                                         </div>
 
                                         <div class="config-section">
                                             <h3 class="config-section__title">"Afternoon"</h3>
                                             <div class="field-row">
-                                                <label class="field-row__label">"Start in (days)"</label>
+                                                <label class="field-row__label">"Start date"</label>
                                                 <input
-                                                    type="number"
-                                                    class="field-row__input"
-                                                    min="0"
-                                                    prop:value=move || afternoon_start_offset.get()
+                                                    type="date"
+                                                    class="field-row__input field-row__input--date"
+                                                    prop:value=move || afternoon_start_date.get()
                                                     prop:disabled=move || is_active() || is_saving.get()
                                                     on:input=move |ev| {
-                                                        afternoon_start_offset.set(event_target_value(&ev));
+                                                        afternoon_start_date.set(event_target_value(&ev));
                                                         save_ok.set(false);
                                                     }
                                                 />
@@ -406,6 +445,16 @@ pub fn SchedulePage() -> impl IntoView {
                                                     }
                                                 />
                                             </div>
+                                            {move || {
+                                                let date = afternoon_start_date.get();
+                                                let repeat = afternoon_repeat_days.get();
+                                                let repeat_days = repeat.parse::<u32>().unwrap_or(0);
+                                                (!date.is_empty() && repeat_days > 0).then(|| view! {
+                                                    <p class="hint">
+                                                        "Starting " {date} ", then every " {repeat_days.to_string()} " days."
+                                                    </p>
+                                                })
+                                            }}
                                         </div>
                                     </div>
                                 })}

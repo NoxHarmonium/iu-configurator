@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use chrono::{Duration, Local};
 use serde::Serialize;
 
 use crate::definitions::{CONTROLLERS, ZONES};
@@ -242,9 +241,9 @@ fn build_manual_seq_zones(
 
 /// Build an `IuSchedule` for a watering session.
 ///
-/// When `periodic` is `Some`, emits `every_n_days` and a computed `start` date
-/// instead of a `weekday` filter.  When `periodic` is `None`, falls back to
-/// the days-of-week approach.
+/// When `periodic` is `Some`, emits `every_n_days` and the stored `start` date
+/// directly instead of a `weekday` filter.  When `periodic` is `None`, falls
+/// back to the days-of-week approach.
 fn build_iu_schedule(
     name: &str,
     time: &str,
@@ -252,19 +251,13 @@ fn build_iu_schedule(
     days: &[String],
 ) -> IuSchedule {
     match periodic {
-        Some(p) => {
-            let start_date = (Local::now().date_naive()
-                + Duration::days(p.start_day_offset as i64))
-            .format("%Y-%m-%d")
-            .to_string();
-            IuSchedule {
-                name: name.to_string(),
-                time: time.to_string(),
-                weekday: None,
-                every_n_days: Some(p.repeat_days),
-                start: Some(start_date),
-            }
-        }
+        Some(p) => IuSchedule {
+            name: name.to_string(),
+            time: time.to_string(),
+            weekday: None,
+            every_n_days: Some(p.repeat_days),
+            start: Some(p.start_date.clone()),
+        },
         None => IuSchedule {
             name: name.to_string(),
             time: time.to_string(),
@@ -471,7 +464,7 @@ mod tests {
     fn test_periodic_morning_emits_every_n_days() {
         let mut schedule = Schedule::default_seed();
         schedule.morning_periodic = Some(PeriodicSchedule {
-            start_day_offset: 0,
+            start_date: "2026-03-20".into(),
             repeat_days: 3,
         });
 
@@ -490,7 +483,7 @@ mod tests {
             "weekday should not appear in periodic mode"
         );
         assert!(
-            yaml.contains("start:"),
+            yaml.contains("start: 2026-03-20"),
             "missing start date in periodic mode"
         );
     }
@@ -499,7 +492,7 @@ mod tests {
     fn test_periodic_afternoon_emits_every_n_days() {
         let mut schedule = Schedule::default_seed();
         schedule.afternoon_periodic = Some(PeriodicSchedule {
-            start_day_offset: 2,
+            start_date: "2026-03-22".into(),
             repeat_days: 7,
         });
 
@@ -516,41 +509,19 @@ mod tests {
     }
 
     #[test]
-    fn test_periodic_start_offset_zero_uses_today() {
+    fn test_periodic_start_date_used_verbatim() {
         let mut schedule = Schedule::default_seed();
+        let expected_date = "2026-06-01";
         schedule.morning_periodic = Some(PeriodicSchedule {
-            start_day_offset: 0,
+            start_date: expected_date.into(),
             repeat_days: 2,
         });
 
         let yaml = generate_yaml(&schedule).unwrap();
 
-        let today = chrono::Local::now()
-            .date_naive()
-            .format("%Y-%m-%d")
-            .to_string();
         assert!(
-            yaml.contains(&today),
-            "start date should be today when offset is 0"
-        );
-    }
-
-    #[test]
-    fn test_periodic_start_offset_adds_days() {
-        let mut schedule = Schedule::default_seed();
-        schedule.morning_periodic = Some(PeriodicSchedule {
-            start_day_offset: 5,
-            repeat_days: 2,
-        });
-
-        let yaml = generate_yaml(&schedule).unwrap();
-
-        let expected = (chrono::Local::now().date_naive() + chrono::Duration::days(5))
-            .format("%Y-%m-%d")
-            .to_string();
-        assert!(
-            yaml.contains(&expected),
-            "start date should be 5 days from today"
+            yaml.contains(expected_date),
+            "start date should appear verbatim in YAML"
         );
     }
 
@@ -560,7 +531,7 @@ mod tests {
         // Set both periodic and days-of-week; periodic should take precedence.
         schedule.morning_days = vec!["mon".into(), "wed".into()];
         schedule.morning_periodic = Some(PeriodicSchedule {
-            start_day_offset: 1,
+            start_date: "2026-03-21".into(),
             repeat_days: 4,
         });
 
@@ -602,7 +573,7 @@ mod tests {
             zone.enabled = false;
         }
         schedule.morning_periodic = Some(PeriodicSchedule {
-            start_day_offset: 0,
+            start_date: "2026-03-20".into(),
             repeat_days: 2,
         });
 

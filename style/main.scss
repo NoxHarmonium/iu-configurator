@@ -269,6 +269,10 @@ body {
       width: 90px;
       text-align: center;
     }
+
+    &--date {
+      width: 160px;
+    }
   }
 }
 
@@ -387,6 +391,12 @@ body {
 .loading {
   color: $color-muted;
   font-size: 0.9rem;
+}
+.hint {
+  color: $color-muted;
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0;
+  font-style: italic;
 }
 .success {
   color: $color-green;

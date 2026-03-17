@@ -14,13 +14,13 @@ pub struct ZoneSchedule {
 
 /// A "every N days" periodic schedule — an alternative to days-of-week scheduling.
 ///
-/// The `start_day_offset` is the number of days from the current date when the
-/// schedule should start (0 = start today, 1 = start tomorrow, etc.).
-/// At YAML generation time this offset is resolved to an absolute `YYYY-MM-DD` date.
+/// `start_date` is the absolute first-run date in `YYYY-MM-DD` format.  Storing
+/// it as an absolute date (rather than a relative offset) ensures the value
+/// remains stable when the user reopens the editor on a different day.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PeriodicSchedule {
-    /// Days from today when watering should first occur (must be >= 0).
-    pub start_day_offset: u32,
+    /// Absolute start date in `YYYY-MM-DD` format (e.g. `"2026-03-20"`).
+    pub start_date: String,
     /// How many days between each watering cycle (must be >= 1).
     pub repeat_days: u32,
 }
