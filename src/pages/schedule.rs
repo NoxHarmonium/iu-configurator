@@ -87,7 +87,7 @@ pub fn SchedulePage() -> impl IntoView {
             <h1 class="page__title">"Weekly Schedule"</h1>
 
             // ── Status banner ────────────────────────────────────────────────
-            <Suspense fallback=|| ()>
+            <Transition fallback=|| ()>
                 {move || {
                     status_res.get().map(|result| {
                         match result {
@@ -105,10 +105,10 @@ pub fn SchedulePage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
 
             // ── Day grid ─────────────────────────────────────────────────────
-            <Suspense fallback=|| view! { <p class="loading">"Loading schedule…"</p> }>
+            <Transition fallback=|| view! { <p class="loading">"Loading schedule…"</p> }>
                 {move || {
                     schedule_res.get().map(|result| match result {
                         Err(e) => view! {
@@ -190,7 +190,7 @@ pub fn SchedulePage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
         </div>
     }
 }

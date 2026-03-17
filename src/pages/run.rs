@@ -102,7 +102,7 @@ pub fn RunPage() -> impl IntoView {
             <h1 class="page__title">"Force Run"</h1>
 
             // ── Status banner ────────────────────────────────────────────────
-            <Suspense fallback=|| ()>
+            <Transition fallback=|| ()>
                 {move || {
                     status_res.get().map(|result| {
                         match result {
@@ -120,10 +120,10 @@ pub fn RunPage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
 
             // ── Zone table ───────────────────────────────────────────────────
-            <Suspense fallback=|| view! { <p class="loading">"Loading zones…"</p> }>
+            <Transition fallback=|| view! { <p class="loading">"Loading zones…"</p> }>
                 {move || {
                     schedule_res.get().map(|result| match result {
                         Err(e) => view! {
@@ -213,7 +213,7 @@ pub fn RunPage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
         </div>
     }
 }
