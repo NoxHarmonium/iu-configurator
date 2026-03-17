@@ -1,10 +1,10 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::{routing::get, Router};
+    use axum::{Router, routing::get};
     use iu_configurator::{app::*, handlers};
     use leptos::prelude::*;
-    use leptos_axum::{generate_route_list, LeptosRoutes};
+    use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
     use tracing::Level;
 

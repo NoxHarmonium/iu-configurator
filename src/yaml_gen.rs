@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::definitions::{CONTROLLERS, ZONES};
-use crate::models::{Schedule, ZoneSchedule};
+use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
 
 // ---------------------------------------------------------------------------
 // Structures that mirror the irrigation_unlimited YAML schema.
@@ -48,6 +48,10 @@ struct IuSchedule {
     time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     weekday: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anchor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    every_n_days: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -116,38 +120,90 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             let mut sequences = Vec::new();
 
-            // Morning sequence — only emitted when at least one day is selected
-            // and at least one enabled zone exists for this controller.
-            if !schedule.morning_days.is_empty() {
-                let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.morning_secs);
+            let is_periodic = schedule.schedule_mode == ScheduleMode::Periodic;
+            let periodic_active =
+                is_periodic && !schedule.period_anchor.is_empty() && schedule.period_days > 0;
+
+            // Morning sequence — emitted when days are selected (weekday) or
+            // a valid periodic anchor+period is configured.
+            let morning_active = if is_periodic {
+                periodic_active
+            } else {
+                !schedule.active_days.is_empty()
+            };
+
+            if morning_active {
+                let seq_zones = build_seq_zones(
+                    ctrl.id,
+                    &schedule.zones,
+                    |zs| zs.morning_enabled,
+                    |zs| zs.morning_secs,
+                );
                 if !seq_zones.is_empty() {
+                    let morning_sched = if is_periodic {
+                        IuSchedule {
+                            name: "Morning".into(),
+                            time: schedule.morning_time.clone(),
+                            weekday: None,
+                            anchor: Some(schedule.period_anchor.clone()),
+                            every_n_days: Some(schedule.period_days),
+                        }
+                    } else {
+                        IuSchedule {
+                            name: "Morning".into(),
+                            time: schedule.morning_time.clone(),
+                            weekday: weekday_filter(&schedule.active_days),
+                            anchor: None,
+                            every_n_days: None,
+                        }
+                    };
                     sequences.push(IuSequence {
                         name: "Morning".into(),
                         sequence_id: format!("{}_morning", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Morning".into(),
-                            time: schedule.morning_time.clone(),
-                            weekday: weekday_filter(&schedule.morning_days),
-                        }],
+                        schedules: vec![morning_sched],
                         zones: seq_zones,
                     });
                 }
             }
 
             // Afternoon sequence
-            if !schedule.afternoon_days.is_empty() {
-                let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.afternoon_secs);
+            let afternoon_active = if is_periodic {
+                periodic_active
+            } else {
+                !schedule.active_days.is_empty()
+            };
+
+            if afternoon_active {
+                let seq_zones = build_seq_zones(
+                    ctrl.id,
+                    &schedule.zones,
+                    |zs| zs.afternoon_enabled,
+                    |zs| zs.afternoon_secs,
+                );
                 if !seq_zones.is_empty() {
+                    let afternoon_sched = if is_periodic {
+                        IuSchedule {
+                            name: "Afternoon".into(),
+                            time: schedule.afternoon_time.clone(),
+                            weekday: None,
+                            anchor: Some(schedule.period_anchor.clone()),
+                            every_n_days: Some(schedule.period_days),
+                        }
+                    } else {
+                        IuSchedule {
+                            name: "Afternoon".into(),
+                            time: schedule.afternoon_time.clone(),
+                            weekday: weekday_filter(&schedule.active_days),
+                            anchor: None,
+                            every_n_days: None,
+                        }
+                    };
                     sequences.push(IuSequence {
                         name: "Afternoon".into(),
                         sequence_id: format!("{}_afternoon", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Afternoon".into(),
-                            time: schedule.afternoon_time.clone(),
-                            weekday: weekday_filter(&schedule.afternoon_days),
-                        }],
+                        schedules: vec![afternoon_sched],
                         zones: seq_zones,
                     });
                 }
@@ -182,6 +238,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 fn build_seq_zones(
     controller_id: &str,
     zone_schedules: &HashMap<String, ZoneSchedule>,
+    is_enabled: impl Fn(&ZoneSchedule) -> bool,
     get_secs: impl Fn(&ZoneSchedule) -> u32,
 ) -> Vec<IuSeqZone> {
     ZONES
@@ -190,7 +247,7 @@ fn build_seq_zones(
         .filter_map(|z| {
             zone_schedules.get(z.id).and_then(|zs| {
                 let secs = get_secs(zs);
-                if zs.enabled && secs > 0 {
+                if is_enabled(zs) && secs > 0 {
                     Some(IuSeqZone {
                         zone_id: z.id.to_string(),
                         duration: format_duration(secs),
@@ -265,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_no_days_produces_no_sequences() {
-        let schedule = Schedule::default_seed(); // morning/afternoon days both empty
+        let schedule = Schedule::default_seed(); // active_days is empty
         let yaml = generate_yaml(&schedule).unwrap();
         // sequences field should be absent when empty (skip_serializing_if)
         assert!(!yaml.contains("sequences"));
@@ -274,9 +331,9 @@ mod tests {
     }
 
     #[test]
-    fn test_morning_only_sequence() {
+    fn test_morning_sequence_produced() {
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days = vec!["mon".into(), "wed".into(), "fri".into()];
+        schedule.active_days = vec!["mon".into(), "wed".into(), "fri".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
 
@@ -285,26 +342,24 @@ mod tests {
             "missing main_morning sequence_id"
         );
         assert!(yaml.contains("07:00"), "missing morning time");
-        assert!(!yaml.contains("afternoon"), "unexpected afternoon sequence");
         assert!(yaml.contains("mon"), "missing weekday filter");
     }
 
     #[test]
-    fn test_afternoon_only_sequence() {
+    fn test_afternoon_sequence_produced() {
         let mut schedule = Schedule::default_seed();
-        schedule.afternoon_days = vec!["sat".into(), "sun".into()];
+        schedule.active_days = vec!["sat".into(), "sun".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
 
         assert!(yaml.contains("main_afternoon"));
         assert!(yaml.contains("15:00"));
-        assert!(!yaml.contains("morning"));
     }
 
     #[test]
     fn test_all_seven_days_omits_weekday_field() {
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days = vec![
+        schedule.active_days = vec![
             "mon".into(),
             "tue".into(),
             "wed".into(),
@@ -326,8 +381,8 @@ mod tests {
     #[test]
     fn test_disabled_zone_excluded_from_sequence() {
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days = vec!["mon".into()];
-        // zone_4 is disabled in default_seed
+        schedule.active_days = vec!["mon".into()];
+        // zone_4 has morning_enabled: false, afternoon_enabled: false in default_seed
 
         let yaml = generate_yaml(&schedule).unwrap();
 
@@ -356,8 +411,7 @@ mod tests {
     #[test]
     fn test_both_sessions_produced() {
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days = vec!["mon".into()];
-        schedule.afternoon_days = vec!["sat".into()];
+        schedule.active_days = vec!["mon".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
 
@@ -406,14 +460,15 @@ mod tests {
     fn print_sample_yaml() {
         // Not a real assertion — useful for manual inspection during development.
         let mut schedule = Schedule::default_seed();
-        schedule.morning_days = vec![
+        schedule.active_days = vec![
             "mon".into(),
             "tue".into(),
             "wed".into(),
             "thu".into(),
             "fri".into(),
+            "sat".into(),
+            "sun".into(),
         ];
-        schedule.afternoon_days = vec!["sat".into(), "sun".into()];
 
         let yaml = generate_yaml(&schedule).unwrap();
         println!("\n--- Sample YAML ---\n{yaml}\n---");

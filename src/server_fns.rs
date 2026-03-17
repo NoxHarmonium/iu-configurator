@@ -103,7 +103,7 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
         _ => {
             return Ok(IrrigationStatus::Unknown(
                 "HA_URL or HA_TOKEN not configured".into(),
-            ))
+            ));
         }
     };
 
@@ -135,7 +135,7 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
             Err(e) => {
                 return Ok(IrrigationStatus::Unknown(format!(
                     "Failed to parse HA response: {e}"
-                )))
+                )));
             }
         };
 

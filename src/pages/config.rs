@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use super::use_status_polling;
 use crate::{
     definitions::ZONES,
-    server_fns::{get_irrigation_status, get_schedule, save_schedule, IrrigationStatus},
+    server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule},
 };
 
 #[component]
@@ -16,9 +16,12 @@ pub fn ConfigPage() -> impl IntoView {
     let morning_time = RwSignal::new("07:00".to_string());
     let afternoon_time = RwSignal::new("15:00".to_string());
 
-    // Per-zone signals: (enabled, morning_secs, afternoon_secs)
+    // Per-zone signals: (morning_enabled, afternoon_enabled, morning_secs, afternoon_secs)
     // Stored as Vec indexed to match ZONES order.
-    let zone_enabled: Vec<RwSignal<bool>> = ZONES.iter().map(|_| RwSignal::new(true)).collect();
+    let zone_morning_enabled: Vec<RwSignal<bool>> =
+        ZONES.iter().map(|_| RwSignal::new(true)).collect();
+    let zone_afternoon_enabled: Vec<RwSignal<bool>> =
+        ZONES.iter().map(|_| RwSignal::new(true)).collect();
     let zone_morning: Vec<RwSignal<String>> = ZONES
         .iter()
         .map(|_| RwSignal::new("00:00".to_string()))
@@ -29,7 +32,8 @@ pub fn ConfigPage() -> impl IntoView {
         .collect();
 
     // Populate once data arrives
-    let zone_enabled_init = zone_enabled.clone();
+    let zone_morning_enabled_init = zone_morning_enabled.clone();
+    let zone_afternoon_enabled_init = zone_afternoon_enabled.clone();
     let zone_morning_init = zone_morning.clone();
     let zone_afternoon_init = zone_afternoon.clone();
     Effect::new(move |_| {
@@ -38,7 +42,8 @@ pub fn ConfigPage() -> impl IntoView {
             afternoon_time.set(s.afternoon_time.clone());
             for (i, zone_def) in ZONES.iter().enumerate() {
                 if let Some(zs) = s.zones.get(zone_def.id) {
-                    zone_enabled_init[i].set(zs.enabled);
+                    zone_morning_enabled_init[i].set(zs.morning_enabled);
+                    zone_afternoon_enabled_init[i].set(zs.afternoon_enabled);
                     zone_morning_init[i].set(secs_to_mmss(zs.morning_secs));
                     zone_afternoon_init[i].set(secs_to_mmss(zs.afternoon_secs));
                 }
@@ -47,14 +52,20 @@ pub fn ConfigPage() -> impl IntoView {
     });
 
     // Save action
-    let zone_enabled_save = zone_enabled.clone();
+    let zone_morning_enabled_save = zone_morning_enabled.clone();
+    let zone_afternoon_enabled_save = zone_afternoon_enabled.clone();
     let zone_morning_save = zone_morning.clone();
     let zone_afternoon_save = zone_afternoon.clone();
 
     let save_action = Action::new(move |_: &()| {
         let mt = morning_time.get();
         let at = afternoon_time.get();
-        let enabled_snap: Vec<bool> = zone_enabled_save.iter().map(|s| s.get()).collect();
+        let morning_enabled_snap: Vec<bool> =
+            zone_morning_enabled_save.iter().map(|s| s.get()).collect();
+        let afternoon_enabled_snap: Vec<bool> = zone_afternoon_enabled_save
+            .iter()
+            .map(|s| s.get())
+            .collect();
         let morning_snap: Vec<String> = zone_morning_save.iter().map(|s| s.get()).collect();
         let afternoon_snap: Vec<String> = zone_afternoon_save.iter().map(|s| s.get()).collect();
 
@@ -65,7 +76,8 @@ pub fn ConfigPage() -> impl IntoView {
                     s.afternoon_time = at;
                     for (i, zone_def) in ZONES.iter().enumerate() {
                         if let Some(zs) = s.zones.get_mut(zone_def.id) {
-                            zs.enabled = enabled_snap[i];
+                            zs.morning_enabled = morning_enabled_snap[i];
+                            zs.afternoon_enabled = afternoon_enabled_snap[i];
                             zs.morning_secs = mmss_to_secs(&morning_snap[i]);
                             zs.afternoon_secs = mmss_to_secs(&afternoon_snap[i]);
                         }
@@ -136,7 +148,8 @@ pub fn ConfigPage() -> impl IntoView {
                             <p class="error">{format!("Failed to load configuration: {e}")}</p>
                         }.into_any(),
                         Ok(_) => {
-                            let zone_enabled_view = zone_enabled.clone();
+                            let zone_morning_enabled_view = zone_morning_enabled.clone();
+                            let zone_afternoon_enabled_view = zone_afternoon_enabled.clone();
                             let zone_morning_view = zone_morning.clone();
                             let zone_afternoon_view = zone_afternoon.clone();
 
@@ -186,12 +199,14 @@ pub fn ConfigPage() -> impl IntoView {
                                         <div class="zone-table">
                                             <div class="zone-table__header">
                                                 <span>"Zone"</span>
-                                                <span>"Enabled"</span>
+                                                <span>"Morning"</span>
                                                 <span>"Morning (MM:SS)"</span>
+                                                <span>"Afternoon"</span>
                                                 <span>"Afternoon (MM:SS)"</span>
                                             </div>
                                             {ZONES.iter().enumerate().map(|(i, zone_def)| {
-                                                let enabled_sig = zone_enabled_view[i];
+                                                let morning_enabled_sig = zone_morning_enabled_view[i];
+                                                let afternoon_enabled_sig = zone_afternoon_enabled_view[i];
                                                 let morning_sig = zone_morning_view[i];
                                                 let afternoon_sig = zone_afternoon_view[i];
                                                 let name = zone_def.name;
@@ -200,15 +215,15 @@ pub fn ConfigPage() -> impl IntoView {
                                                     <div class="zone-table__row">
                                                         <span class="zone-table__name">{name}</span>
 
-                                                        // Enabled toggle
+                                                        // Morning enabled toggle
                                                         <label class="toggle">
                                                             <input
                                                                 type="checkbox"
                                                                 class="toggle__input"
-                                                                prop:checked=move || enabled_sig.get()
+                                                                prop:checked=move || morning_enabled_sig.get()
                                                                 prop:disabled=move || is_active() || is_saving.get()
                                                                 on:change=move |ev| {
-                                                                    enabled_sig.set(event_target_checked(&ev));
+                                                                    morning_enabled_sig.set(event_target_checked(&ev));
                                                                     save_ok.set(false);
                                                                 }
                                                             />
@@ -227,6 +242,21 @@ pub fn ConfigPage() -> impl IntoView {
                                                                 save_ok.set(false);
                                                             }
                                                         />
+
+                                                        // Afternoon enabled toggle
+                                                        <label class="toggle">
+                                                            <input
+                                                                type="checkbox"
+                                                                class="toggle__input"
+                                                                prop:checked=move || afternoon_enabled_sig.get()
+                                                                prop:disabled=move || is_active() || is_saving.get()
+                                                                on:change=move |ev| {
+                                                                    afternoon_enabled_sig.set(event_target_checked(&ev));
+                                                                    save_ok.set(false);
+                                                                }
+                                                            />
+                                                            <span class="toggle__slider"></span>
+                                                        </label>
 
                                                         // Afternoon duration
                                                         <input
