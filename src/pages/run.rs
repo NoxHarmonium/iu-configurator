@@ -6,7 +6,7 @@ use super::use_status_polling;
 use crate::{
     definitions::ZONES,
     pages::config::{mmss_to_secs, secs_to_mmss},
-    server_fns::{cancel_run, get_irrigation_status, get_schedule, run_manual, IrrigationStatus},
+    server_fns::{IrrigationStatus, cancel_run, get_irrigation_status, get_schedule, run_manual},
 };
 
 #[component]

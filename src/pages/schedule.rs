@@ -2,7 +2,7 @@ use leptos::prelude::*;
 
 use super::use_status_polling;
 use crate::models::ScheduleMode;
-use crate::server_fns::{get_irrigation_status, get_schedule, save_schedule, IrrigationStatus};
+use crate::server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule};
 
 const DAYS: &[(&str, &str)] = &[
     ("mon", "Monday"),

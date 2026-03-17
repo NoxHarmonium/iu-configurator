@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use super::use_status_polling;
 use crate::{
     definitions::ZONES,
-    server_fns::{get_irrigation_status, get_schedule, save_schedule, IrrigationStatus},
+    server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule},
 };
 
 #[component]
