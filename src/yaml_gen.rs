@@ -11,11 +11,6 @@ use crate::models::{Schedule, ZoneSchedule};
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
-struct IuYaml {
-    irrigation_unlimited: IuConfig,
-}
-
-#[derive(Serialize)]
 struct IuConfig {
     controllers: Vec<IuController>,
 }
@@ -72,9 +67,7 @@ struct IuSeqZone {
 /// Generate an `irrigation_unlimited` YAML string from the active schedule.
 pub fn generate_yaml(schedule: &Schedule) -> Result<String, serde_yaml::Error> {
     let controllers = build_controllers(schedule);
-    serde_yaml::to_string(&IuYaml {
-        irrigation_unlimited: IuConfig { controllers },
-    })
+    serde_yaml::to_string(&IuConfig { controllers })
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +250,7 @@ mod tests {
         let yaml = generate_yaml(&schedule).unwrap();
         // sequences field should be absent when empty (skip_serializing_if)
         assert!(!yaml.contains("sequences"));
-        assert!(yaml.contains("irrigation_unlimited"));
+        assert!(yaml.contains("controllers"));
         assert!(yaml.contains("zone_1"));
     }
 
