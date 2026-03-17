@@ -76,7 +76,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.ECR_REPOSITORY }}
 
@@ -144,7 +144,7 @@ jobs:
       # ── Derive final image tags ───────────────────────────────────────────────
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.ECR_REPOSITORY }}
           tags: |
