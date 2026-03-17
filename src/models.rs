@@ -2,6 +2,21 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// How the watering schedule is expressed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleMode {
+    /// Run on specific days of the week (existing behaviour).
+    #[default]
+    Weekday,
+    /// Run every N days starting from an anchor date.
+    Periodic,
+}
+
+fn default_period_days() -> u32 {
+    2
+}
+
 /// Per-zone dynamic schedule data — stored in iu-schedule.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneSchedule {
@@ -32,6 +47,15 @@ pub struct Schedule {
     /// Empty map means no manual sequence is emitted in the YAML.
     #[serde(default)]
     pub manual_zones: HashMap<String, u32>,
+    /// Whether to use weekday or periodic scheduling.
+    #[serde(default)]
+    pub schedule_mode: ScheduleMode,
+    /// Anchor date for periodic mode (ISO 8601, e.g. "2026-02-05").
+    #[serde(default)]
+    pub period_anchor: String,
+    /// Days between each watering cycle in periodic mode.
+    #[serde(default = "default_period_days")]
+    pub period_days: u32,
 }
 
 // TODO: Make default schedules configurable via config file
@@ -117,6 +141,9 @@ impl Schedule {
             afternoon_days: Vec::new(), // all off until user enables
             zones,
             manual_zones: HashMap::new(),
+            schedule_mode: ScheduleMode::Weekday,
+            period_anchor: String::new(),
+            period_days: 2,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::definitions::{CONTROLLERS, ZONES};
-use crate::models::{Schedule, ZoneSchedule};
+use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
 
 // ---------------------------------------------------------------------------
 // Structures that mirror the irrigation_unlimited YAML schema.
@@ -48,6 +48,10 @@ struct IuSchedule {
     time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     weekday: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anchor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    every_n_days: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -116,38 +120,80 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             let mut sequences = Vec::new();
 
-            // Morning sequence — only emitted when at least one day is selected
-            // and at least one enabled zone exists for this controller.
-            if !schedule.morning_days.is_empty() {
+            let is_periodic = schedule.schedule_mode == ScheduleMode::Periodic;
+            let periodic_active =
+                is_periodic && !schedule.period_anchor.is_empty() && schedule.period_days > 0;
+
+            // Morning sequence — emitted when days are selected (weekday) or
+            // a valid periodic anchor+period is configured.
+            let morning_active = if is_periodic {
+                periodic_active
+            } else {
+                !schedule.morning_days.is_empty()
+            };
+
+            if morning_active {
                 let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.morning_secs);
                 if !seq_zones.is_empty() {
+                    let morning_sched = if is_periodic {
+                        IuSchedule {
+                            name: "Morning".into(),
+                            time: schedule.morning_time.clone(),
+                            weekday: None,
+                            anchor: Some(schedule.period_anchor.clone()),
+                            every_n_days: Some(schedule.period_days),
+                        }
+                    } else {
+                        IuSchedule {
+                            name: "Morning".into(),
+                            time: schedule.morning_time.clone(),
+                            weekday: weekday_filter(&schedule.morning_days),
+                            anchor: None,
+                            every_n_days: None,
+                        }
+                    };
                     sequences.push(IuSequence {
                         name: "Morning".into(),
                         sequence_id: format!("{}_morning", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Morning".into(),
-                            time: schedule.morning_time.clone(),
-                            weekday: weekday_filter(&schedule.morning_days),
-                        }],
+                        schedules: vec![morning_sched],
                         zones: seq_zones,
                     });
                 }
             }
 
             // Afternoon sequence
-            if !schedule.afternoon_days.is_empty() {
+            let afternoon_active = if is_periodic {
+                periodic_active
+            } else {
+                !schedule.afternoon_days.is_empty()
+            };
+
+            if afternoon_active {
                 let seq_zones = build_seq_zones(ctrl.id, &schedule.zones, |zs| zs.afternoon_secs);
                 if !seq_zones.is_empty() {
+                    let afternoon_sched = if is_periodic {
+                        IuSchedule {
+                            name: "Afternoon".into(),
+                            time: schedule.afternoon_time.clone(),
+                            weekday: None,
+                            anchor: Some(schedule.period_anchor.clone()),
+                            every_n_days: Some(schedule.period_days),
+                        }
+                    } else {
+                        IuSchedule {
+                            name: "Afternoon".into(),
+                            time: schedule.afternoon_time.clone(),
+                            weekday: weekday_filter(&schedule.afternoon_days),
+                            anchor: None,
+                            every_n_days: None,
+                        }
+                    };
                     sequences.push(IuSequence {
                         name: "Afternoon".into(),
                         sequence_id: format!("{}_afternoon", ctrl.id),
                         delay: format_duration(ctrl.delay_secs),
-                        schedules: vec![IuSchedule {
-                            name: "Afternoon".into(),
-                            time: schedule.afternoon_time.clone(),
-                            weekday: weekday_filter(&schedule.afternoon_days),
-                        }],
+                        schedules: vec![afternoon_sched],
                         zones: seq_zones,
                     });
                 }
