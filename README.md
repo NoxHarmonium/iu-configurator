@@ -68,6 +68,22 @@ Produces:
 
 ## Docker
 
+### Docker Compose Stack
+
+Bring up a stack with home assistant for integration testing.
+
+Hot reload is supported by the Docker Compose `--watch` switch.
+
+```
+docker compose up --watch --build
+```
+
+The config directory is already mounted in, so it should work out of the box.
+Irrigation Unlimited is installed already, and there are some dummy irrigation entities hooked up.
+You'll just have to do the HA setup wizard each time the stack is spun up from scratch.
+
+### Single Image
+
 Build and run locally:
 
 ```bash
@@ -76,11 +92,11 @@ docker build -t iu-configurator .
 docker run -p 3000:3000 \
   -e HA_URL=http://homeassistant.local:8123 \
   -e HA_TOKEN=your_token_here \
-  -v ./config:/config \
+  -v ./dev/config:/config \
   iu-configurator
 ```
 
-The `/config` volume is where `iu-schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
+The `dev/config` volume is where `iu-schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
 
 ---
 

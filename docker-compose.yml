@@ -1,0 +1,93 @@
+# Development stack: iu-configurator (hot-reload) + Home Assistant + Irrigation Unlimited
+#
+# ── Quick start ──────────────────────────────────────────────────────────────
+#
+#   First run (builds images, compiles iu-configurator from scratch — slow):
+#     docker compose -f dev/docker-compose.yml up --build
+#
+#   Hot-reload dev (syncs source changes, cargo-leptos-watch recompiles inside):
+#     docker compose -f dev/docker-compose.yml watch
+#
+#   Ports:
+#     http://localhost:3000  — iu-configurator
+#     http://localhost:8123  — Home Assistant
+#
+# ── HA setup (one-time, after first boot) ────────────────────────────────────
+#
+#   1. Open http://localhost:8123, complete the onboarding wizard.
+#   2. Go to your profile → Security → Create a Long-Lived Access Token.
+#   3. Uncomment HA_URL and HA_TOKEN below, then restart iu-configurator:
+#        docker compose -f dev/docker-compose.yml restart iu-configurator
+#
+# ── Shared config ─────────────────────────────────────────────────────────────
+#
+#   iu-configurator writes to ../config/ (the repo's ./config/ directory).
+#   HA mounts the same directory read-only at /config/iu/ so it can load
+#   irrigation_unlimited.yaml via its `!include iu/irrigation_unlimited.yaml`.
+#   After saving a schedule in the app, trigger an HA reload manually via the
+#   UI, or set HA_URL + HA_TOKEN to let the app reload HA automatically.
+#
+name: iu-dev
+
+services:
+  iu-configurator:
+    build:
+      target: dev
+    ports:
+      - "3000:3000" # app server
+      - "3001:3001" # leptos hot-reload WebSocket
+    environment:
+      LEPTOS_ENV: DEV
+      CONFIG_DIR: /config
+      # Uncomment once you have an HA long-lived access token:
+      # HA_URL: http://homeassistant:8123
+      # HA_TOKEN: <your-long-lived-token>
+    volumes:
+      # Cargo caches — survive container restarts so recompilation stays fast
+      - iu-cargo-registry:/usr/local/cargo/registry
+      - iu-cargo-git:/usr/local/cargo/git
+      - iu-target:/app/target
+      # Shared config dir — iu-configurator writes here, HA reads it
+      - ./dev/config:/config
+    # `docker compose watch` syncs source files to the container;
+    # cargo-leptos-watch inside handles incremental recompilation.
+    develop:
+      watch:
+        - path: ../src
+          action: sync
+          target: /app/src
+        - path: ../style
+          action: sync
+          target: /app/style
+        - path: ../public
+          action: sync
+          target: /app/public
+        - path: ../Cargo.toml
+          action: rebuild
+        - path: ../Cargo.lock
+          action: rebuild
+    depends_on:
+      - homeassistant
+
+  homeassistant:
+    build:
+      context: dev/ha
+      args:
+        # https://github.com/rgc99/irrigation_unlimited/releases
+        IU_VERSION: "1.3.3"
+    ports:
+      - "8123:8123"
+    environment:
+      TZ: Australia/Sydney
+    volumes:
+      # HA persistent state (DB, .storage, logs) — separate from seed config
+      - ha-config:/config
+      # iu-configurator output — read-only, mounted as a subdirectory of HA config
+      - ./dev/config:/config/iu:ro
+    restart: unless-stopped
+
+volumes:
+  iu-cargo-registry:
+  iu-cargo-git:
+  iu-target:
+  ha-config:

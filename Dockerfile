@@ -1,10 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# ── Stage 1: builder ──────────────────────────────────────────────────────────
-FROM rust:1.94-trixie AS builder
-
-# Docker containers don't need hot reload etc. and should be built in prod mode
-ENV LEPTOS_ENV=prod
+# ── Stage 1: toolchain (shared by prod builder and dev) ──────────────────────
+FROM rust:1.94-trixie AS toolchain
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,6 +16,12 @@ RUN rustup target add wasm32-unknown-unknown
 
 # Install cargo-leptos (pinned version for reproducibility)
 RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/leptos-rs/cargo-leptos/releases/download/v0.3.5/cargo-leptos-installer.sh | sh
+
+# ── Stage 2: builder ──────────────────────────────────────────────────────────
+FROM toolchain AS builder
+
+# Docker containers don't need hot reload etc. and should be built in prod mode
+ENV LEPTOS_ENV=prod
 
 WORKDIR /build
 
@@ -38,7 +41,7 @@ RUN --mount=type=cache,id=iu-configurator-cargo-registry,target=/usr/local/cargo
     cp /build/target/release/hash.txt /app/target/release/hash.txt && \
     cp -r /build/target/site /app/target/site
 
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM debian:trixie-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -66,3 +69,20 @@ EXPOSE 3000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/app/target/release/iu-configurator"]
+
+# ── Stage 4: dev ──────────────────────────────────────────────────────────────
+# Based on the shared toolchain stage — no release build, runs cargo-leptos watch.
+# Used by dev/docker-compose.yml via `target: dev`.
+FROM toolchain AS dev
+
+WORKDIR /app
+
+COPY . .
+
+ENV LEPTOS_ENV=DEV
+ENV CONFIG_DIR=/config
+
+# App server port 3000; leptos hot-reload WebSocket port 3001
+EXPOSE 3000 3001
+
+CMD ["cargo", "leptos", "watch"]
