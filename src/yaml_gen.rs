@@ -282,17 +282,12 @@ where
         .into_iter()
         .enumerate()
         .map(|(i, (days, seq_zones))| {
-            let (seq_id, name) = if total == 1 {
-                (
-                    format!("{}_{}", controller_id, session),
-                    capitalize_first(session),
-                )
+            let seq_id = if total == 1 {
+                format!("{}_{}", controller_id, session)
             } else {
-                (
-                    format!("{}_{}_{}", controller_id, session, i + 1),
-                    format!("{} {}", capitalize_first(session), i + 1),
-                )
+                format!("{}_{}_{}", controller_id, session, i + 1)
             };
+            let name = format!("{} ({})", capitalize_first(session), days_label(&days));
             IuSequence {
                 name,
                 sequence_id: seq_id,
@@ -307,6 +302,28 @@ where
             }
         })
         .collect()
+}
+
+/// Returns a human-readable label for a set of active days.
+/// Examples: "All Week", "Weekdays", "Weekends", "Mon, Wed, Fri"
+fn days_label(days: &[String]) -> String {
+    const WEEKDAYS: &[&str] = &["mon", "tue", "wed", "thu", "fri"];
+    const WEEKEND: &[&str] = &["sat", "sun"];
+
+    if days.len() == 7 {
+        return "All Week".to_string();
+    }
+    let day_strs: Vec<&str> = days.iter().map(String::as_str).collect();
+    if day_strs == WEEKDAYS {
+        return "Weekdays".to_string();
+    }
+    if day_strs == WEEKEND {
+        return "Weekends".to_string();
+    }
+    days.iter()
+        .map(|d| capitalize_first(d))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn capitalize_first(s: &str) -> String {
