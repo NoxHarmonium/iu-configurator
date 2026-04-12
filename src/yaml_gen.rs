@@ -49,9 +49,13 @@ struct IuSchedule {
     #[serde(skip_serializing_if = "Option::is_none")]
     weekday: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    anchor: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    every_n_days: Option<u32>,
+    day: Option<IuEveryNDays>,
+}
+
+#[derive(Serialize)]
+struct IuEveryNDays {
+    every_n_days: u32,
+    start_n_days: String,
 }
 
 #[derive(Serialize)]
@@ -142,8 +146,10 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                                 name: "Morning".into(),
                                 time: schedule.morning_time.clone(),
                                 weekday: None,
-                                anchor: Some(schedule.period_anchor.clone()),
-                                every_n_days: Some(schedule.period_days),
+                                day: Some(IuEveryNDays {
+                                    every_n_days: schedule.period_days,
+                                    start_n_days: schedule.period_anchor.clone(),
+                                }),
                             }],
                             zones: seq_zones,
                         });
@@ -164,8 +170,10 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                                 name: "Afternoon".into(),
                                 time: schedule.afternoon_time.clone(),
                                 weekday: None,
-                                anchor: Some(schedule.period_anchor.clone()),
-                                every_n_days: Some(schedule.period_days),
+                                day: Some(IuEveryNDays {
+                                    every_n_days: schedule.period_days,
+                                    start_n_days: schedule.period_anchor.clone(),
+                                }),
                             }],
                             zones: seq_zones,
                         });
@@ -293,8 +301,7 @@ where
                     name: capitalize_first(session),
                     time: session_time.to_string(),
                     weekday: weekday_filter(&days),
-                    anchor: None,
-                    every_n_days: None,
+                    day: None,
                 }],
                 zones: seq_zones,
             }
