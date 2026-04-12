@@ -1,12 +1,18 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::{Router, routing::get};
-    use iu_configurator::{app::*, handlers};
+    use std::env;
+
+    use axum::{Extension, Router, routing::get};
+    use iu_configurator::{app::*, config::Config, handlers};
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
     use tracing::Level;
+
+    if let Ok(env_file) = env::var("ENV_FILE") {
+        dotenvy::from_filename(env_file).unwrap();
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -14,6 +20,8 @@ async fn main() {
                 .unwrap_or_else(|_| "iu_configurator=info,tower_http=info".into()),
         )
         .init();
+
+    let config = envy::from_env::<Config>().expect("invalid configuration");
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
@@ -55,7 +63,8 @@ async fn main() {
                         .on_response(DefaultOnResponse::new().level(Level::INFO)),
                 ),
         )
-        .with_state(leptos_options);
+        .with_state(leptos_options)
+        .layer(Extension(config));
 
     tracing::info!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

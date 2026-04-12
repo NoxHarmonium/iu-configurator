@@ -9,12 +9,12 @@
 #
 FROM ghcr.io/home-assistant/home-assistant:stable
 
-ARG IU_VERSION=1.3.3
+ARG IU_VERSION=2025.12.0
 
 # curl is available in the HA base image (Alpine); install unzip from apk.
 RUN apk add --no-cache unzip && \
     curl -fsSL \
-        "https://github.com/rgc99/irrigation_unlimited/releases/download/v${IU_VERSION}/irrigation_unlimited.zip" \
+        "https://github.com/rgc99/irrigation_unlimited/archive/refs/tags/${IU_VERSION}.zip" \
         -o /tmp/iu.zip && \
     mkdir -p /config/custom_components && \
     unzip -q /tmp/iu.zip -d /config && \

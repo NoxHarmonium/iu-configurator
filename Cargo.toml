@@ -23,7 +23,9 @@ reqwest = { version = "0.13", features = ["json"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 tower-http = { version = "0.6", features = ["trace"], optional = true }
+envy = { version = "0.4", optional = true }
 leptos-use = "0.18.3"
+dotenvy = "0.15.7"
 
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
@@ -48,6 +50,7 @@ ssr = [
     "dep:tracing",
     "dep:tracing-subscriber",
     "dep:tower-http",
+    "dep:envy",
 ]
 
 # Defines a size-optimized profile for the WASM bundle in release mode

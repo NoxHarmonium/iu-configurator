@@ -3,6 +3,11 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ssr")]
+use crate::config::Config;
+#[cfg(feature = "ssr")]
+use axum::Extension;
+
 use crate::models::Schedule;
 
 /// Whether any irrigation controller is currently running.
@@ -28,8 +33,10 @@ pub enum IrrigationStatus {
 pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
     use std::path::PathBuf;
 
-    let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
-    let path = PathBuf::from(&config_dir).join("iu-schedule.json");
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let path = PathBuf::from(&config.config_dir).join("iu-schedule.json");
 
     if path.exists() {
         tracing::info!(path = %path.display(), "loading schedule from file");
@@ -54,8 +61,10 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
 
     use crate::yaml_gen::generate_yaml;
 
-    let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
-    let config_path = PathBuf::from(&config_dir);
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let config_path = PathBuf::from(&config.config_dir);
 
     // Ensure the target directory exists (important on first run in a new container).
     tokio::fs::create_dir_all(&config_path)
@@ -81,7 +90,7 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
     tracing::info!("schedule saved, files written");
 
     // ── HA reload (best-effort) ────────────────────────────────────────────
-    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
         reload_ha_config(&ha_url, &ha_token).await?;
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA reload");
@@ -98,13 +107,14 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
 pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> {
     use crate::definitions::CONTROLLERS;
 
-    let (ha_url, ha_token) = match (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
-        (Ok(u), Ok(t)) => (u, t),
-        _ => {
-            return Ok(IrrigationStatus::Unknown(
-                "HA_URL or HA_TOKEN not configured".into(),
-            ));
-        }
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) else {
+        return Ok(IrrigationStatus::Unknown(
+            "HA_URL or HA_TOKEN not configured".into(),
+        ));
     };
 
     let base = ha_url.trim_end_matches('/');
@@ -162,8 +172,10 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     }
     tracing::info!(zones = ?manual_zones, "starting manual run");
 
-    let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
-    let config_path = PathBuf::from(&config_dir);
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let config_path = PathBuf::from(&config.config_dir);
 
     tokio::fs::create_dir_all(&config_path)
         .await
@@ -198,7 +210,7 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
         })?;
 
     // HA calls are best-effort when env vars are absent (local dev).
-    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
         reload_ha_config(&ha_url, &ha_token).await?;
         trigger_manual_run(&ha_url, &ha_token).await?;
         tracing::info!("manual run triggered in HA");
@@ -213,7 +225,10 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 #[server]
 pub async fn cancel_run() -> Result<(), ServerFnError> {
     tracing::info!("cancel_run requested");
-    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
         cancel_ha_run(&ha_url, &ha_token).await?;
         tracing::info!("irrigation cancelled in HA");
     } else {
