@@ -38,9 +38,10 @@ pub struct Schedule {
     pub morning_time: String,
     /// Local time for afternoon watering, e.g. "15:00".
     pub afternoon_time: String,
-    /// Days of week that watering runs: subset of ["mon","tue","wed","thu","fri","sat","sun"].
+    /// Per-zone active days for Weekday mode.
+    /// Maps zone_id → subset of ["mon","tue","wed","thu","fri","sat","sun"].
     #[serde(default)]
-    pub active_days: Vec<String>,
+    pub zone_active_days: HashMap<String, Vec<String>>,
     /// Per-zone config keyed by zone_id (e.g. "zone_1").
     pub zones: HashMap<String, ZoneSchedule>,
     /// Zones selected for the next manual run, keyed by zone_id → duration in seconds.
@@ -145,7 +146,7 @@ impl Schedule {
         Schedule {
             morning_time: "07:00".into(),
             afternoon_time: "15:00".into(),
-            active_days: Vec::new(), // all off until user enables
+            zone_active_days: HashMap::new(),
             zones,
             manual_zones: HashMap::new(),
             schedule_mode: ScheduleMode::Weekday,

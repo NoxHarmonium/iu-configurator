@@ -8,3 +8,8 @@ target/
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Dev compose — HA runtime state (DB, logs, .storage) lives in a named Docker
+# volume, but if it ever gets written to the worktree, ignore it.
+dev/ha/runtime/
+dev/config

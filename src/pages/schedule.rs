@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use leptos::prelude::*;
 
 use super::use_status_polling;
+use crate::definitions::ZONES;
 use crate::models::ScheduleMode;
 use crate::server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule};
 
@@ -22,7 +25,7 @@ pub fn SchedulePage() -> impl IntoView {
     use_status_polling(move || status_res.refetch());
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
-    let active_days: RwSignal<Vec<String>> = RwSignal::new(vec![]);
+    let zone_active_days: RwSignal<HashMap<String, Vec<String>>> = RwSignal::new(HashMap::new());
     let schedule_mode: RwSignal<ScheduleMode> = RwSignal::new(ScheduleMode::Weekday);
     let period_anchor: RwSignal<String> = RwSignal::new(String::new());
     let period_days: RwSignal<u32> = RwSignal::new(2);
@@ -30,7 +33,7 @@ pub fn SchedulePage() -> impl IntoView {
     // Populate signals when schedule data arrives
     Effect::new(move |_| {
         if let Some(Ok(s)) = schedule_res.get() {
-            active_days.set(s.active_days.clone());
+            zone_active_days.set(s.zone_active_days.clone());
             schedule_mode.set(s.schedule_mode.clone());
             period_anchor.set(s.period_anchor.clone());
             period_days.set(s.period_days);
@@ -39,7 +42,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Save action ───────────────────────────────────────────────────────────
     let save_action = Action::new(move |_: &()| {
-        let a = active_days.get();
+        let zad = zone_active_days.get();
         let mode = schedule_mode.get();
         let anchor = period_anchor.get();
         let days = period_days.get();
@@ -47,7 +50,7 @@ pub fn SchedulePage() -> impl IntoView {
             // Read the full schedule from server, then patch just the day fields.
             match get_schedule().await {
                 Ok(mut s) => {
-                    s.active_days = a;
+                    s.zone_active_days = zad;
                     s.schedule_mode = mode;
                     s.period_anchor = anchor;
                     s.period_days = days;
@@ -86,15 +89,58 @@ pub fn SchedulePage() -> impl IntoView {
         }
     };
 
-    // ── Day toggle helper ─────────────────────────────────────────────────────
-    let toggle_day = move |day: &'static str, checked: bool| {
-        active_days.update(|days| {
+    // ── Zone×Day matrix helpers ──────────────────────────────────────────
+    let zone_has_day = move |zone_id: &'static str, day: &'static str| -> bool {
+        zone_active_days
+            .get()
+            .get(zone_id)
+            .map(|days| days.iter().any(|d| d == day))
+            .unwrap_or(false)
+    };
+
+    let all_zones_have_day = move |day: &'static str| -> bool {
+        let map = zone_active_days.get();
+        ZONES.iter().all(|z| {
+            map.get(z.id)
+                .map(|d| d.iter().any(|s| s == day))
+                .unwrap_or(false)
+        })
+    };
+
+    let some_zones_have_day = move |day: &'static str| -> bool {
+        let map = zone_active_days.get();
+        ZONES.iter().any(|z| {
+            map.get(z.id)
+                .map(|d| d.iter().any(|s| s == day))
+                .unwrap_or(false)
+        })
+    };
+
+    let toggle_zone_day = move |zone_id: &'static str, day: &'static str, checked: bool| {
+        zone_active_days.update(|map| {
+            let days = map.entry(zone_id.to_string()).or_default();
             if checked {
-                if !days.contains(&day.to_string()) {
+                if !days.iter().any(|d| d == day) {
                     days.push(day.to_string());
                 }
             } else {
                 days.retain(|d| d != day);
+            }
+        });
+        save_ok.set(false);
+    };
+
+    let toggle_all_for_day = move |day: &'static str, checked: bool| {
+        zone_active_days.update(|map| {
+            for zone in ZONES {
+                let days = map.entry(zone.id.to_string()).or_default();
+                if checked {
+                    if !days.iter().any(|d| d == day) {
+                        days.push(day.to_string());
+                    }
+                } else {
+                    days.retain(|d| d != day);
+                }
             }
         });
         save_ok.set(false);
@@ -164,32 +210,60 @@ pub fn SchedulePage() -> impl IntoView {
                                 // ── Weekday or Periodic content ──────────────
                                 {move || match schedule_mode.get() {
                                     ScheduleMode::Weekday => view! {
-                                        <div class="day-grid">
-                                            <div class="day-grid__header">
-                                                <span></span>
-                                                <span class="day-grid__session-label">"Enabled"</span>
+                                        <div class="zone-day-matrix">
+                                            // Header: zone label + one checkbox-column per day
+                                            <div class="zone-day-matrix__row zone-day-matrix__row--header">
+                                                <span class="zone-day-matrix__zone-label zone-day-matrix__zone-label--header">"Zone"</span>
+                                                {DAYS.iter().map(|(day_key, day_label)| {
+                                                    let day_key = *day_key;
+                                                    let day_label = *day_label;
+                                                    let day_abbr = &day_label[..3];
+                                                    view! {
+                                                        <div class="zone-day-matrix__day-header">
+                                                            <label title=format!("Toggle all zones for {day_label}")>
+                                                                <span class="zone-day-matrix__day-abbr">{day_abbr}</span>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    class="zone-day-matrix__check"
+                                                                    prop:checked=move || all_zones_have_day(day_key)
+                                                                    prop:indeterminate=move || some_zones_have_day(day_key) && !all_zones_have_day(day_key)
+                                                                    prop:disabled=move || is_active() || is_saving.get()
+                                                                    on:change=move |ev| {
+                                                                        let checked = event_target_checked(&ev);
+                                                                        toggle_all_for_day(day_key, checked);
+                                                                    }
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                    }
+                                                }).collect_view()}
                                             </div>
-                                            {DAYS.iter().map(|(key, label)| {
-                                                let key = *key;
-                                                let label = *label;
+                                            // Data rows: one per zone
+                                            {ZONES.iter().map(|zone| {
+                                                let zone_id = zone.id;
+                                                let zone_name = zone.name;
                                                 view! {
-                                                    <div class="day-grid__row">
-                                                        <span class="day-grid__day-label">{label}</span>
-
-                                                        // Day toggle
-                                                        <label class="toggle">
-                                                            <input
-                                                                type="checkbox"
-                                                                class="toggle__input"
-                                                                prop:checked=move || active_days.get().contains(&key.to_string())
-                                                                prop:disabled=move || is_active() || is_saving.get()
-                                                                on:change=move |ev| {
-                                                                    let checked = event_target_checked(&ev);
-                                                                    toggle_day(key, checked);
-                                                                }
-                                                            />
-                                                            <span class="toggle__slider"></span>
-                                                        </label>
+                                                    <div class="zone-day-matrix__row">
+                                                        <span class="zone-day-matrix__zone-label">{zone_name}</span>
+                                                        {DAYS.iter().map(|(day_key, day_label)| {
+                                                            let day_key = *day_key;
+                                                            let day_abbr = &day_label[..2];
+                                                            view! {
+                                                                <label class="zone-day-matrix__cell">
+                                                                    <span class="zone-day-matrix__cell-day">{day_abbr}</span>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        class="zone-day-matrix__check"
+                                                                        prop:checked=move || zone_has_day(zone_id, day_key)
+                                                                        prop:disabled=move || is_active() || is_saving.get()
+                                                                        on:change=move |ev| {
+                                                                            let checked = event_target_checked(&ev);
+                                                                            toggle_zone_day(zone_id, day_key, checked);
+                                                                        }
+                                                                    />
+                                                                </label>
+                                                            }
+                                                        }).collect_view()}
                                                     </div>
                                                 }
                                             }).collect_view()}

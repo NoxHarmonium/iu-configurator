@@ -158,47 +158,212 @@ body {
 }
 
 // ── Day grid (schedule page) ──────────────────────────────────────────────────
-.day-grid {
+.zone-day-matrix {
   background: $color-white;
   border: 1px solid $color-border;
   border-radius: $radius;
-  overflow: hidden;
   box-shadow: $shadow;
+  overflow-x: auto;
+  margin-bottom: 1.25rem;
 
-  &__header,
   &__row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: minmax(150px, 2fr) repeat(7, minmax(40px, 1fr));
     align-items: center;
-  }
-
-  &__header {
-    background: $color-green-light;
-    padding: 0.6rem 1rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: $color-green-dark;
-    border-bottom: 1px solid $color-border;
-  }
-
-  &__session-label {
-    text-align: center;
-  }
-
-  &__row {
-    padding: 0.65rem 1rem;
+    min-width: 480px;
     border-bottom: 1px solid $color-border;
 
     &:last-child {
       border-bottom: none;
     }
-    &:nth-child(even) {
+
+    &:nth-child(even):not(&--header) {
       background: #fafafa;
+    }
+
+    &--header {
+      background: $color-green-light;
+      border-bottom: 2px solid $color-border;
     }
   }
 
-  &__day-label {
-    font-size: 0.95rem;
+  &__zone-label {
+    padding: 0.65rem 0.75rem 0.65rem 1rem;
+    font-size: 0.9rem;
+    position: sticky;
+    left: 0;
+    background: inherit;
+    z-index: 1;
+
+    &--header {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: $color-green-dark;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+  }
+
+  &__day-header {
+    display: flex;
+    justify-content: center;
+    padding: 0.4rem 0.2rem;
+
+    label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+  }
+
+  &__day-abbr {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $color-green-dark;
+    user-select: none;
+  }
+
+  &__cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0.5rem 0.2rem;
+    cursor: pointer;
+  }
+
+  &__cell-day {
+    display: none;
+  }
+
+  &__check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid $color-border;
+    border-radius: 4px;
+    background: $color-white;
+    cursor: pointer;
+    position: relative;
+    transition:
+      border-color 0.15s,
+      background 0.15s;
+    flex-shrink: 0;
+
+    &:checked {
+      background: $color-green;
+      border-color: $color-green;
+
+      &::after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 6px;
+        height: 10px;
+        border: 2px solid $color-white;
+        border-top: none;
+        border-left: none;
+        transform: rotate(45deg);
+      }
+    }
+
+    &:indeterminate {
+      background: rgba($color-green, 0.25);
+      border-color: $color-green;
+
+      &::after {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: 7px;
+        width: 10px;
+        height: 2px;
+        background: $color-green-dark;
+        border-radius: 1px;
+      }
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    &:hover:not(:disabled) {
+      border-color: $color-green;
+    }
+
+    &:focus {
+      outline: 2px solid rgba($color-green, 0.4);
+      outline-offset: 2px;
+    }
+  }
+
+  @media (max-width: 520px) {
+    overflow-x: visible;
+
+    &__row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      min-width: 0;
+      padding: 0.5rem 0.75rem 0.6rem;
+      gap: 5px;
+
+      &--header {
+        display: none;
+      }
+    }
+
+    &__zone-label {
+      flex: 0 0 100%;
+      padding: 0 0 0.25rem 0;
+    }
+
+    &__cell {
+      flex: 0 0 auto;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0.3rem 0.55rem;
+      border: 1.5px solid $color-border;
+      border-radius: 20px;
+
+      &:has(input:checked) {
+        background: $color-green;
+        border-color: $color-green;
+
+        .zone-day-matrix__cell-day {
+          color: $color-white;
+        }
+      }
+
+      &:not(:has(input:disabled)):hover {
+        border-color: $color-green;
+      }
+
+      &:has(input:disabled) {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+
+    &__cell-day {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: $color-text;
+      user-select: none;
+    }
+
+    &__check {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
   }
 }
 
@@ -432,13 +597,6 @@ body {
     &__row {
       grid-template-columns: 1fr 50px 70px 50px 70px;
       gap: 0.3rem;
-    }
-  }
-
-  .day-grid {
-    &__header,
-    &__row {
-      grid-template-columns: 1fr 80px;
     }
   }
 }

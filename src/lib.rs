@@ -5,6 +5,8 @@ pub mod pages;
 pub mod server_fns;
 
 #[cfg(feature = "ssr")]
+pub mod config;
+#[cfg(feature = "ssr")]
 pub mod handlers;
 #[cfg(feature = "ssr")]
 pub mod yaml_gen;

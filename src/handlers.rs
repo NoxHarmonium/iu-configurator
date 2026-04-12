@@ -1,13 +1,17 @@
-use axum::http::StatusCode;
+use axum::{Extension, http::StatusCode};
 use serde_json::json;
 
-pub async fn health() -> (StatusCode, axum::Json<serde_json::Value>) {
+use crate::config::Config;
+
+pub async fn health(
+    Extension(config): Extension<Config>,
+) -> (StatusCode, axum::Json<serde_json::Value>) {
     let mut checks: Vec<serde_json::Value> = Vec::new();
     let mut ok = true;
 
     // ── Check 1: CONFIG_DIR is accessible ─────────────────────────────────
-    let config_dir = std::env::var("CONFIG_DIR").unwrap_or_else(|_| "/config".into());
-    match tokio::fs::metadata(&config_dir).await {
+    let config_dir = &config.config_dir;
+    match tokio::fs::metadata(config_dir).await {
         Ok(m) if m.is_dir() => {
             checks.push(json!({ "name": "config_dir", "status": "ok", "path": config_dir }));
         }
@@ -32,7 +36,7 @@ pub async fn health() -> (StatusCode, axum::Json<serde_json::Value>) {
     }
 
     // ── Check 2: Home Assistant reachable (only when token is set) ────────
-    if let (Ok(ha_url), Ok(ha_token)) = (std::env::var("HA_URL"), std::env::var("HA_TOKEN")) {
+    if let (Some(ha_url), Some(ha_token)) = (&config.ha_url, &config.ha_token) {
         let url = format!("{}/api/", ha_url.trim_end_matches('/'));
         let result = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
