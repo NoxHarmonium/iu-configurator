@@ -245,10 +245,12 @@ pub fn SchedulePage() -> impl IntoView {
                                                 view! {
                                                     <div class="zone-day-matrix__row">
                                                         <span class="zone-day-matrix__zone-label">{zone_name}</span>
-                                                        {DAYS.iter().map(|(day_key, _)| {
+                                                        {DAYS.iter().map(|(day_key, day_label)| {
                                                             let day_key = *day_key;
+                                                            let day_abbr = &day_label[..2];
                                                             view! {
-                                                                <div class="zone-day-matrix__cell">
+                                                                <label class="zone-day-matrix__cell">
+                                                                    <span class="zone-day-matrix__cell-day">{day_abbr}</span>
                                                                     <input
                                                                         type="checkbox"
                                                                         class="zone-day-matrix__check"
@@ -259,7 +261,7 @@ pub fn SchedulePage() -> impl IntoView {
                                                                             toggle_zone_day(zone_id, day_key, checked);
                                                                         }
                                                                     />
-                                                                </div>
+                                                                </label>
                                                             }
                                                         }).collect_view()}
                                                     </div>

@@ -190,6 +190,10 @@ body {
   &__zone-label {
     padding: 0.65rem 0.75rem 0.65rem 1rem;
     font-size: 0.9rem;
+    position: sticky;
+    left: 0;
+    background: inherit;
+    z-index: 1;
 
     &--header {
       font-size: 0.8rem;
@@ -226,6 +230,11 @@ body {
     justify-content: center;
     align-items: center;
     padding: 0.5rem 0.2rem;
+    cursor: pointer;
+  }
+
+  &__cell-day {
+    display: none;
   }
 
   &__check {
@@ -289,6 +298,71 @@ body {
     &:focus {
       outline: 2px solid rgba($color-green, 0.4);
       outline-offset: 2px;
+    }
+  }
+
+  @media (max-width: 520px) {
+    overflow-x: visible;
+
+    &__row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      min-width: 0;
+      padding: 0.5rem 0.75rem 0.6rem;
+      gap: 5px;
+
+      &--header {
+        display: none;
+      }
+    }
+
+    &__zone-label {
+      flex: 0 0 100%;
+      padding: 0 0 0.25rem 0;
+    }
+
+    &__cell {
+      flex: 0 0 auto;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0.3rem 0.55rem;
+      border: 1.5px solid $color-border;
+      border-radius: 20px;
+
+      &:has(input:checked) {
+        background: $color-green;
+        border-color: $color-green;
+
+        .zone-day-matrix__cell-day {
+          color: $color-white;
+        }
+      }
+
+      &:not(:has(input:disabled)):hover {
+        border-color: $color-green;
+      }
+
+      &:has(input:disabled) {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+
+    &__cell-day {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: $color-text;
+      user-select: none;
+    }
+
+    &__check {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
     }
   }
 }
