@@ -213,6 +213,25 @@ pub fn SchedulePage() -> impl IntoView {
                                 // ── Weekday or Periodic content ──────────────
                                 {move || match schedule_mode.get() {
                                     ScheduleMode::Weekday => view! {
+                                        // ── Mobile weather bar ───────────────
+                                        <div class="weather-bar">
+                                            {DAYS.iter().map(|(day_key, day_label)| {
+                                                let day_key = *day_key;
+                                                let day_abbr = &day_label[..3];
+                                                view! {
+                                                    <div class="weather-bar__chip">
+                                                        <span class="weather-bar__day">{day_abbr}</span>
+                                                        <span class="weather-bar__icon">
+                                                            {move || weather_res.get()
+                                                                .and_then(|r| r.ok())
+                                                                .and_then(|m| m.get(day_key).cloned())
+                                                                .unwrap_or_default()}
+                                                        </span>
+                                                    </div>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+
                                         <div class="zone-day-matrix">
                                             // Header: zone label + one checkbox-column per day
                                             <div class="zone-day-matrix__row zone-day-matrix__row--header">
