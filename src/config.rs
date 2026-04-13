@@ -10,4 +10,5 @@ pub struct Config {
     pub config_dir: String,
     pub ha_url: Option<String>,
     pub ha_token: Option<String>,
+    pub ha_weather_entity: Option<String>,
 }
