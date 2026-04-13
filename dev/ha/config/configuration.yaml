@@ -6,10 +6,10 @@
 #
 homeassistant:
   name: "Dev"
-  latitude: -33.8688
-  longitude: 151.2093
+  latitude: -37.8274851
+  longitude: 144.9496239
   unit_system: metric
-  time_zone: Australia/Sydney
+  time_zone: Australia/Melbourne
   country: AU
 
 # Required stubs (HA won't start without these if referenced below)

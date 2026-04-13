@@ -5,7 +5,9 @@ use leptos::prelude::*;
 use super::use_status_polling;
 use crate::definitions::ZONES;
 use crate::models::ScheduleMode;
-use crate::server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule};
+use crate::server_fns::{
+    IrrigationStatus, get_irrigation_status, get_schedule, get_weather_forecast, save_schedule,
+};
 
 const DAYS: &[(&str, &str)] = &[
     ("mon", "Monday"),
@@ -22,6 +24,7 @@ pub fn SchedulePage() -> impl IntoView {
     // ── Remote data ──────────────────────────────────────────────────────────
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
+    let weather_res = Resource::new(|| (), |_| get_weather_forecast());
     use_status_polling(move || status_res.refetch());
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
@@ -210,6 +213,25 @@ pub fn SchedulePage() -> impl IntoView {
                                 // ── Weekday or Periodic content ──────────────
                                 {move || match schedule_mode.get() {
                                     ScheduleMode::Weekday => view! {
+                                        // ── Mobile weather bar ───────────────
+                                        <div class="weather-bar">
+                                            {DAYS.iter().map(|(day_key, day_label)| {
+                                                let day_key = *day_key;
+                                                let day_abbr = &day_label[..3];
+                                                view! {
+                                                    <div class="weather-bar__chip">
+                                                        <span class="weather-bar__day">{day_abbr}</span>
+                                                        <span class="weather-bar__icon">
+                                                            {move || weather_res.get()
+                                                                .and_then(|r| r.ok())
+                                                                .and_then(|m| m.get(day_key).cloned())
+                                                                .unwrap_or_default()}
+                                                        </span>
+                                                    </div>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+
                                         <div class="zone-day-matrix">
                                             // Header: zone label + one checkbox-column per day
                                             <div class="zone-day-matrix__row zone-day-matrix__row--header">
@@ -221,6 +243,12 @@ pub fn SchedulePage() -> impl IntoView {
                                                     view! {
                                                         <div class="zone-day-matrix__day-header">
                                                             <label title=format!("Toggle all zones for {day_label}")>
+                                                                <span class="zone-day-matrix__weather-icon">
+                                                                    {move || weather_res.get()
+                                                                        .and_then(|r| r.ok())
+                                                                        .and_then(|m| m.get(day_key).cloned())
+                                                                        .unwrap_or_default()}
+                                                                </span>
                                                                 <span class="zone-day-matrix__day-abbr">{day_abbr}</span>
                                                                 <input
                                                                     type="checkbox"

@@ -329,3 +329,141 @@ async fn cancel_ha_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Weather forecast
+// ---------------------------------------------------------------------------
+
+/// Fetch the daily weather forecast from Home Assistant and return a mapping of
+/// weekday key (e.g. `"mon"`) to a Unicode weather emoji for the next 7 days.
+///
+/// Returns an empty map — never `Err` — when `HA_WEATHER_ENTITY` is not set,
+/// HA is unreachable, or any parsing step fails, so the UI degrades silently.
+#[server]
+pub async fn get_weather_forecast() -> Result<HashMap<String, String>, ServerFnError> {
+    use chrono::{DateTime, Datelike, Duration, Local, Weekday};
+
+    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    let (Some(ha_url), Some(ha_token), Some(weather_entity)) =
+        (config.ha_url, config.ha_token, config.ha_weather_entity)
+    else {
+        return Ok(HashMap::new());
+    };
+
+    let url = format!(
+        "{}/api/services/weather/get_forecasts?return_response",
+        ha_url.trim_end_matches('/')
+    );
+
+    let body = serde_json::json!({
+        "entity_id": weather_entity,
+        "type": "daily"
+    });
+
+    let response = match reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", format!("Bearer {ha_token}"))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("weather forecast request failed: {e}");
+            return Ok(HashMap::new());
+        }
+    };
+
+    if !response.status().is_success() {
+        tracing::warn!("weather forecast returned HTTP {}", response.status());
+        return Ok(HashMap::new());
+    }
+
+    let json: serde_json::Value = match response.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("failed to parse weather forecast response: {e}");
+            return Ok(HashMap::new());
+        }
+    };
+
+    // The REST API with ?return_response returns:
+    // { "changed_states": [], "service_response": { "<entity_id>": { "forecast": [...] } } }
+    let forecast_list = json
+        .get("service_response")
+        .and_then(|r| r.get(&weather_entity))
+        .and_then(|e| e.get("forecast"))
+        .and_then(|f| f.as_array());
+
+    let Some(forecast_list) = forecast_list else {
+        tracing::warn!(response = %json, "unexpected weather forecast response shape");
+        return Ok(HashMap::new());
+    };
+
+    let today = Local::now().date_naive();
+    let window_end = today + Duration::days(7);
+
+    let mut result = HashMap::new();
+
+    for entry in forecast_list {
+        let Some(datetime_str) = entry.get("datetime").and_then(|d| d.as_str()) else {
+            continue;
+        };
+        let Some(condition) = entry.get("condition").and_then(|c| c.as_str()) else {
+            continue;
+        };
+
+        // Parse ISO 8601 — BOM returns timezone-aware strings.
+        let date = if let Ok(dt) = DateTime::parse_from_rfc3339(datetime_str) {
+            dt.date_naive()
+        } else if let Ok(d) = chrono::NaiveDate::parse_from_str(datetime_str, "%Y-%m-%d") {
+            d
+        } else {
+            tracing::warn!("could not parse forecast datetime: {datetime_str}");
+            continue;
+        };
+
+        if date < today || date >= window_end {
+            continue;
+        }
+
+        let day_key = match date.weekday() {
+            Weekday::Mon => "mon",
+            Weekday::Tue => "tue",
+            Weekday::Wed => "wed",
+            Weekday::Thu => "thu",
+            Weekday::Fri => "fri",
+            Weekday::Sat => "sat",
+            Weekday::Sun => "sun",
+        };
+
+        let emoji = condition_to_emoji(condition);
+        if let Some(e) = emoji {
+            result.insert(day_key.to_string(), e.to_string());
+        }
+    }
+
+    Ok(result)
+}
+
+#[cfg(feature = "ssr")]
+fn condition_to_emoji(condition: &str) -> Option<&'static str> {
+    match condition {
+        "sunny" | "clear-night" => Some("☀️"),
+        "partlycloudy" => Some("⛅"),
+        "cloudy" => Some("☁️"),
+        "fog" => Some("🌫️"),
+        "rainy" => Some("🌦️"),
+        "pouring" => Some("🌧️"),
+        "snowy" => Some("❄️"),
+        "snowy-rainy" | "hail" => Some("🌨️"),
+        "lightning" | "lightning-rainy" => Some("⛈️"),
+        "windy" | "windy-variant" => Some("💨"),
+        "exceptional" => Some("⚠️"),
+        _ => None,
+    }
+}

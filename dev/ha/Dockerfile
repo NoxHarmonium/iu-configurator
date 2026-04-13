@@ -15,6 +15,8 @@ ARG IU_CARD_VERSION=2026.1.0
 # curl is available in the HA base image (Alpine); install unzip from apk.
 # The GitHub source archive extracts to irrigation_unlimited-<version>/ so we
 # move the nested custom_components/irrigation_unlimited dir to the right place.
+# Weather forecasts are provided by the built-in met.no integration, which HA
+# configures automatically from the home coordinates in configuration.yaml.
 RUN apk add --no-cache unzip && \
     curl -fsSL \
         "https://github.com/rgc99/irrigation_unlimited/archive/refs/tags/${IU_VERSION}.zip" \

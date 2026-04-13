@@ -218,6 +218,14 @@ body {
     }
   }
 
+  &__weather-icon {
+    display: block;
+    text-align: center;
+    font-size: 0.85rem;
+    line-height: 1;
+    min-height: 1.1em;
+  }
+
   &__day-abbr {
     font-size: 0.75rem;
     font-weight: 600;
@@ -588,6 +596,41 @@ body {
   color: $color-red;
   font-size: 0.9rem;
   margin: 0;
+}
+
+// ── Mobile weather bar ──────────────────────────────────────────────────────
+// Shown only on mobile where the matrix header (with its icons) is hidden.
+.weather-bar {
+  display: none;
+
+  @media (max-width: 520px) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  &__chip {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border: 1.5px solid $color-border;
+    border-radius: 20px;
+    background: $color-white;
+  }
+
+  &__day {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $color-green-dark;
+  }
+
+  &__icon {
+    font-size: 0.85rem;
+    line-height: 1;
+    min-width: 1em;
+  }
 }
 
 // ── Responsive ────────────────────────────────────────────────────────────────

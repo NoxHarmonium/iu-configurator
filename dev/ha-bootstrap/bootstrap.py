@@ -191,6 +191,66 @@ def main():
 
     log(f"Credentials written to {TOKEN_FILE}")
 
+    discover_weather_entity(long_lived_token)
+
+
+def discover_weather_entity(access_token):
+    """Find the met.no weather entity that HA auto-configures and write it to ha.env.
+
+    Met.no is a built-in HA integration that sets itself up automatically from
+    the home coordinates in configuration.yaml — no config flow needed.
+    We just poll until the entity appears (it can take a few seconds after boot)
+    then record it so the iu-configurator app can use it.
+
+    Idempotent: skips if HA_WEATHER_ENTITY is already present in the token file.
+    """
+    try:
+        existing = open(TOKEN_FILE).read()
+    except OSError:
+        existing = ""
+
+    if "HA_WEATHER_ENTITY=" in existing:
+        log("HA_WEATHER_ENTITY already set — skipping weather entity discovery")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    log("Waiting for met.no weather entity…")
+    deadline = time.time() + 60
+    entity_id = None
+
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"{HA_BASE}/api/states", headers=headers, timeout=10)
+            if r.ok:
+                weather_entities = [
+                    s["entity_id"]
+                    for s in r.json()
+                    if s.get("entity_id", "").startswith("weather.")
+                ]
+                if weather_entities:
+                    # Prefer a non-hourly entity if both exist.
+                    entity_id = next(
+                        (e for e in weather_entities if "hourly" not in e),
+                        weather_entities[0],
+                    )
+                    break
+        except Exception:
+            pass
+        time.sleep(3)
+
+    if not entity_id:
+        log("No weather.* entity found — HA_WEATHER_ENTITY not written (non-fatal)")
+        return
+
+    log(f"Found weather entity: {entity_id}")
+    with open(TOKEN_FILE, "a") as f:
+        f.write(f"HA_WEATHER_ENTITY={entity_id}\n")
+    log(f"HA_WEATHER_ENTITY={entity_id} written to {TOKEN_FILE}")
+
 
 if __name__ == "__main__":
     main()
