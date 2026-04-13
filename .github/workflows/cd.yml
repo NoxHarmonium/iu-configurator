@@ -86,6 +86,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: runtime
           platforms: ${{ matrix.platform }}
           push: true
           labels: ${{ steps.meta.outputs.labels }}

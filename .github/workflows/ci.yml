@@ -74,6 +74,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          target: runtime
           platforms: linux/amd64
           push: false
           cache-from: type=gha,scope=ci-docker
