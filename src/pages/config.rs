@@ -1,85 +1,118 @@
 use leptos::prelude::*;
+use std::collections::HashMap;
 
 use super::use_status_polling;
-use crate::{
-    definitions::ZONES,
-    server_fns::{IrrigationStatus, get_irrigation_status, get_schedule, save_schedule},
+use crate::server_fns::{
+    ClientSetupInfo, IrrigationStatus, get_client_setup, get_irrigation_status, get_schedule,
+    save_schedule,
 };
 
 #[component]
 pub fn ConfigPage() -> impl IntoView {
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
-    use_status_polling(move || status_res.refetch());
+    let setup_res = Resource::new(|| (), |_| get_client_setup());
+    let poll_ms = Signal::derive(move || {
+        setup_res
+            .get()
+            .and_then(|r| r.ok())
+            .map(|s: ClientSetupInfo| s.poll_interval_ms)
+            .unwrap_or(5000)
+    });
+    use_status_polling(move || status_res.refetch(), poll_ms);
 
     // Local signals for form fields — populated from schedule_res
     let morning_time = RwSignal::new("07:00".to_string());
     let afternoon_time = RwSignal::new("15:00".to_string());
 
-    // Per-zone signals: (morning_enabled, afternoon_enabled, morning_secs, afternoon_secs)
-    // Stored as Vec indexed to match ZONES order.
-    let zone_morning_enabled: Vec<RwSignal<bool>> =
-        ZONES.iter().map(|_| RwSignal::new(true)).collect();
-    let zone_afternoon_enabled: Vec<RwSignal<bool>> =
-        ZONES.iter().map(|_| RwSignal::new(true)).collect();
-    let zone_morning: Vec<RwSignal<String>> = ZONES
-        .iter()
-        .map(|_| RwSignal::new("00:00".to_string()))
-        .collect();
-    let zone_afternoon: Vec<RwSignal<String>> = ZONES
-        .iter()
-        .map(|_| RwSignal::new("00:00".to_string()))
-        .collect();
+    // Per-zone signals keyed by zone id
+    let zone_morning_enabled: RwSignal<HashMap<String, bool>> = RwSignal::new(HashMap::new());
+    let zone_afternoon_enabled: RwSignal<HashMap<String, bool>> = RwSignal::new(HashMap::new());
+    let zone_morning: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());
+    let zone_afternoon: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());
 
-    // Populate once data arrives
-    let zone_morning_enabled_init = zone_morning_enabled.clone();
-    let zone_afternoon_enabled_init = zone_afternoon_enabled.clone();
-    let zone_morning_init = zone_morning.clone();
-    let zone_afternoon_init = zone_afternoon.clone();
+    // Populate once both resources arrive; track both so effect re-runs when either changes
     Effect::new(move |_| {
-        if let Some(Ok(s)) = schedule_res.get() {
+        let setup_opt = setup_res.get();
+        let schedule_opt = schedule_res.get();
+
+        let Some(Ok(setup)) = setup_opt else {
+            return;
+        };
+
+        zone_morning_enabled.update(|m| {
+            for z in &setup.zones {
+                m.entry(z.id.clone()).or_insert(true);
+            }
+        });
+        zone_afternoon_enabled.update(|m| {
+            for z in &setup.zones {
+                m.entry(z.id.clone()).or_insert(true);
+            }
+        });
+        zone_morning.update(|m| {
+            for z in &setup.zones {
+                m.entry(z.id.clone()).or_insert_with(|| "00:00".to_string());
+            }
+        });
+        zone_afternoon.update(|m| {
+            for z in &setup.zones {
+                m.entry(z.id.clone()).or_insert_with(|| "00:00".to_string());
+            }
+        });
+
+        if let Some(Ok(s)) = schedule_opt {
             morning_time.set(s.morning_time.clone());
             afternoon_time.set(s.afternoon_time.clone());
-            for (i, zone_def) in ZONES.iter().enumerate() {
-                if let Some(zs) = s.zones.get(zone_def.id) {
-                    zone_morning_enabled_init[i].set(zs.morning_enabled);
-                    zone_afternoon_enabled_init[i].set(zs.afternoon_enabled);
-                    zone_morning_init[i].set(secs_to_mmss(zs.morning_secs));
-                    zone_afternoon_init[i].set(secs_to_mmss(zs.afternoon_secs));
+            for z in &setup.zones {
+                if let Some(zs) = s.zones.get(z.id.as_str()) {
+                    zone_morning_enabled.update(|m| {
+                        m.insert(z.id.clone(), zs.morning_enabled);
+                    });
+                    zone_afternoon_enabled.update(|m| {
+                        m.insert(z.id.clone(), zs.afternoon_enabled);
+                    });
+                    zone_morning.update(|m| {
+                        m.insert(z.id.clone(), secs_to_mmss(zs.morning_secs));
+                    });
+                    zone_afternoon.update(|m| {
+                        m.insert(z.id.clone(), secs_to_mmss(zs.afternoon_secs));
+                    });
                 }
             }
         }
     });
 
     // Save action
-    let zone_morning_enabled_save = zone_morning_enabled.clone();
-    let zone_afternoon_enabled_save = zone_afternoon_enabled.clone();
-    let zone_morning_save = zone_morning.clone();
-    let zone_afternoon_save = zone_afternoon.clone();
-
     let save_action = Action::new(move |_: &()| {
         let mt = morning_time.get();
         let at = afternoon_time.get();
-        let morning_enabled_snap: Vec<bool> =
-            zone_morning_enabled_save.iter().map(|s| s.get()).collect();
-        let afternoon_enabled_snap: Vec<bool> = zone_afternoon_enabled_save
-            .iter()
-            .map(|s| s.get())
-            .collect();
-        let morning_snap: Vec<String> = zone_morning_save.iter().map(|s| s.get()).collect();
-        let afternoon_snap: Vec<String> = zone_afternoon_save.iter().map(|s| s.get()).collect();
+        let morning_enabled_snap = zone_morning_enabled.get();
+        let afternoon_enabled_snap = zone_afternoon_enabled.get();
+        let morning_snap = zone_morning.get();
+        let afternoon_snap = zone_afternoon.get();
 
         async move {
             match get_schedule().await {
                 Ok(mut s) => {
                     s.morning_time = mt;
                     s.afternoon_time = at;
-                    for (i, zone_def) in ZONES.iter().enumerate() {
-                        if let Some(zs) = s.zones.get_mut(zone_def.id) {
-                            zs.morning_enabled = morning_enabled_snap[i];
-                            zs.afternoon_enabled = afternoon_enabled_snap[i];
-                            zs.morning_secs = mmss_to_secs(&morning_snap[i]);
-                            zs.afternoon_secs = mmss_to_secs(&afternoon_snap[i]);
+                    let zone_ids: Vec<String> = morning_enabled_snap.keys().cloned().collect();
+                    for zid in &zone_ids {
+                        if let Some(zs) = s.zones.get_mut(zid.as_str()) {
+                            zs.morning_enabled =
+                                morning_enabled_snap.get(zid).copied().unwrap_or(true);
+                            zs.afternoon_enabled =
+                                afternoon_enabled_snap.get(zid).copied().unwrap_or(true);
+                            zs.morning_secs = mmss_to_secs(
+                                morning_snap.get(zid).map(|s| s.as_str()).unwrap_or("00:00"),
+                            );
+                            zs.afternoon_secs = mmss_to_secs(
+                                afternoon_snap
+                                    .get(zid)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("00:00"),
+                            );
                         }
                     }
                     save_schedule(s).await
@@ -148,10 +181,11 @@ pub fn ConfigPage() -> impl IntoView {
                             <p class="error">{format!("Failed to load configuration: {e}")}</p>
                         }.into_any(),
                         Ok(_) => {
-                            let zone_morning_enabled_view = zone_morning_enabled.clone();
-                            let zone_afternoon_enabled_view = zone_afternoon_enabled.clone();
-                            let zone_morning_view = zone_morning.clone();
-                            let zone_afternoon_view = zone_afternoon.clone();
+                            let Some(Ok(setup)) = setup_res.get() else {
+                                return view! {
+                                    <p class="loading">"Loading zone information…"</p>
+                                }.into_any();
+                            };
 
                             view! {
                                 <form class="config-form" on:submit=|ev| ev.prevent_default()>
@@ -204,12 +238,16 @@ pub fn ConfigPage() -> impl IntoView {
                                                 <span>"Afternoon"</span>
                                                 <span>"Afternoon (MM:SS)"</span>
                                             </div>
-                                            {ZONES.iter().enumerate().map(|(i, zone_def)| {
-                                                let morning_enabled_sig = zone_morning_enabled_view[i];
-                                                let afternoon_enabled_sig = zone_afternoon_enabled_view[i];
-                                                let morning_sig = zone_morning_view[i];
-                                                let afternoon_sig = zone_afternoon_view[i];
-                                                let name = zone_def.name;
+                                            {setup.zones.into_iter().map(|zone| {
+                                                let zid1 = zone.id.clone();
+                                                let zid2 = zone.id.clone();
+                                                let zid3 = zone.id.clone();
+                                                let zid4 = zone.id.clone();
+                                                let zid5 = zone.id.clone();
+                                                let zid6 = zone.id.clone();
+                                                let zid7 = zone.id.clone();
+                                                let zid8 = zone.id.clone();
+                                                let name = zone.name.clone();
 
                                                 view! {
                                                     <div class="zone-table__row">
@@ -220,10 +258,11 @@ pub fn ConfigPage() -> impl IntoView {
                                                             <input
                                                                 type="checkbox"
                                                                 class="toggle__input"
-                                                                prop:checked=move || morning_enabled_sig.get()
+                                                                prop:checked=move || zone_morning_enabled.get().get(&zid1).copied().unwrap_or(true)
                                                                 prop:disabled=move || is_active() || is_saving.get()
                                                                 on:change=move |ev| {
-                                                                    morning_enabled_sig.set(event_target_checked(&ev));
+                                                                    let v = event_target_checked(&ev);
+                                                                    zone_morning_enabled.update(|m| { m.insert(zid2.clone(), v); });
                                                                     save_ok.set(false);
                                                                 }
                                                             />
@@ -235,10 +274,11 @@ pub fn ConfigPage() -> impl IntoView {
                                                             type="text"
                                                             class="field-row__input field-row__input--duration"
                                                             placeholder="MM:SS"
-                                                            prop:value=move || morning_sig.get()
+                                                            prop:value=move || zone_morning.get().get(&zid3).cloned().unwrap_or_default()
                                                             prop:disabled=move || is_active() || is_saving.get()
                                                             on:input=move |ev| {
-                                                                morning_sig.set(event_target_value(&ev));
+                                                                let v = event_target_value(&ev);
+                                                                zone_morning.update(|m| { m.insert(zid4.clone(), v); });
                                                                 save_ok.set(false);
                                                             }
                                                         />
@@ -248,10 +288,11 @@ pub fn ConfigPage() -> impl IntoView {
                                                             <input
                                                                 type="checkbox"
                                                                 class="toggle__input"
-                                                                prop:checked=move || afternoon_enabled_sig.get()
+                                                                prop:checked=move || zone_afternoon_enabled.get().get(&zid5).copied().unwrap_or(true)
                                                                 prop:disabled=move || is_active() || is_saving.get()
                                                                 on:change=move |ev| {
-                                                                    afternoon_enabled_sig.set(event_target_checked(&ev));
+                                                                    let v = event_target_checked(&ev);
+                                                                    zone_afternoon_enabled.update(|m| { m.insert(zid6.clone(), v); });
                                                                     save_ok.set(false);
                                                                 }
                                                             />
@@ -263,10 +304,11 @@ pub fn ConfigPage() -> impl IntoView {
                                                             type="text"
                                                             class="field-row__input field-row__input--duration"
                                                             placeholder="MM:SS"
-                                                            prop:value=move || afternoon_sig.get()
+                                                            prop:value=move || zone_afternoon.get().get(&zid7).cloned().unwrap_or_default()
                                                             prop:disabled=move || is_active() || is_saving.get()
                                                             on:input=move |ev| {
-                                                                afternoon_sig.set(event_target_value(&ev));
+                                                                let v = event_target_value(&ev);
+                                                                zone_afternoon.update(|m| { m.insert(zid8.clone(), v); });
                                                                 save_ok.set(false);
                                                             }
                                                         />
