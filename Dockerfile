@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: toolchain (shared by prod builder and dev) ──────────────────────
-FROM rust:1.94-trixie AS toolchain
+FROM rust:1.95-trixie AS toolchain
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
