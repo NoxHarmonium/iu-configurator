@@ -10,9 +10,7 @@
 #   • iu-configurator: pull the published ECR image; no source build, no
 #     Cargo volume mounts, no hot-reload watcher.
 #   • homeassistant: keep the context build but accept IU_VERSION / IU_CARD_VERSION
-#     from the environment (for the weekly "latest IU" run), falling back to
-#     the versions pinned in docker-compose.yml.
-#
+#     from the environment (for the weekly "latest IU" run)
 name: iu-dev
 
 services:

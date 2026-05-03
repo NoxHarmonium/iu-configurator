@@ -124,7 +124,7 @@ Each architecture is built on its own native runner (no QEMU emulation), which d
 Cargo-leptos uses Playwright as the end-to-end test tool.
 Tests are located in end2end/tests directory.
 
-## Executing a Server on a Remote Machine Without the Toolchain
+## Executing a Server on a Remote Machine Without Docker
 
 After running a `cargo leptos build --release` the minimum files needed are:
 

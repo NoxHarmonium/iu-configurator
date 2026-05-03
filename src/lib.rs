@@ -1,5 +1,4 @@
 pub mod app;
-pub mod definitions;
 pub mod models;
 pub mod pages;
 pub mod server_fns;
