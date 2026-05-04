@@ -12,4 +12,10 @@ target/
 # Dev compose — HA runtime state (DB, logs, .storage) lives in a named Docker
 # volume, but if it ever gets written to the worktree, ignore it.
 dev/ha/runtime/
-dev/config
+# 1. Ignore everything inside the folder
+dev/config/*
+# 2. Re-include the folder itself (required so Git scans it)
+!dev/config
+# 3. Unignore the specific file
+# This config file defines all the zones/controllers/etc. and so we should check it in
+!dev/config/iu-setup.yaml
