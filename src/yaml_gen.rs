@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::definitions::{CONTROLLERS, ZONES};
 use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
+use crate::setup::IuSetup;
 
 // ---------------------------------------------------------------------------
 // Structures that mirror the irrigation_unlimited YAML schema.
@@ -69,8 +69,8 @@ struct IuSeqZone {
 // ---------------------------------------------------------------------------
 
 /// Generate an `irrigation_unlimited` YAML string from the active schedule.
-pub fn generate_yaml(schedule: &Schedule) -> Result<String, serde_yaml::Error> {
-    let controllers = build_controllers(schedule);
+pub fn generate_yaml(schedule: &Schedule, setup: &IuSetup) -> Result<String, serde_yaml::Error> {
+    let controllers = build_controllers(schedule, setup);
     let yaml = serde_yaml::to_string(&IuConfig { controllers })?;
     // serde_yaml targets YAML 1.2 and leaves "HH:MM" unquoted, but Home
     // Assistant uses PyYAML which defaults to YAML 1.1 where bare "HH:MM"
@@ -107,18 +107,20 @@ fn quote_time_fields(yaml: String) -> String {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
-    CONTROLLERS
+fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> {
+    setup
+        .controllers
         .iter()
         .map(|ctrl| {
             // All physical zone definitions for this controller (always included).
-            let zones: Vec<IuZone> = ZONES
+            let zones: Vec<IuZone> = setup
+                .zones
                 .iter()
                 .filter(|z| z.controller_id == ctrl.id)
                 .map(|z| IuZone {
-                    zone_id: z.id.to_string(),
-                    name: z.name.to_string(),
-                    entity_id: z.entity_id.to_string(),
+                    zone_id: z.id.clone(),
+                    name: z.name.clone(),
+                    entity_id: z.entity_id.clone(),
                 })
                 .collect();
 
@@ -132,7 +134,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                 // Periodic mode: one morning and one afternoon sequence for all enabled zones.
                 if periodic_active {
                     let seq_zones = build_seq_zones(
-                        ctrl.id,
+                        setup,
+                        ctrl.id.as_str(),
                         &schedule.zones,
                         |zs| zs.morning_enabled,
                         |zs| zs.morning_secs,
@@ -156,7 +159,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                     }
 
                     let seq_zones = build_seq_zones(
-                        ctrl.id,
+                        setup,
+                        ctrl.id.as_str(),
                         &schedule.zones,
                         |zs| zs.afternoon_enabled,
                         |zs| zs.afternoon_secs,
@@ -182,7 +186,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
             } else {
                 // Weekday mode: group zones by their day pattern, one sequence per group.
                 sequences.extend(build_weekday_sequences(
-                    ctrl.id,
+                    setup,
+                    ctrl.id.as_str(),
                     &schedule.zones,
                     &schedule.zone_active_days,
                     &schedule.morning_time,
@@ -192,7 +197,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
                     |zs| zs.morning_secs,
                 ));
                 sequences.extend(build_weekday_sequences(
-                    ctrl.id,
+                    setup,
+                    ctrl.id.as_str(),
                     &schedule.zones,
                     &schedule.zone_active_days,
                     &schedule.afternoon_time,
@@ -205,7 +211,8 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 
             // Manual sequence — no schedules, triggered via HA API only.
             // Only emitted when at least one zone has a non-zero duration selected.
-            let manual_seq_zones = build_manual_seq_zones(ctrl.id, &schedule.manual_zones);
+            let manual_seq_zones =
+                build_manual_seq_zones(setup, ctrl.id.as_str(), &schedule.manual_zones);
             if !manual_seq_zones.is_empty() {
                 sequences.push(IuSequence {
                     name: "Manual".into(),
@@ -217,7 +224,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
             }
 
             IuController {
-                name: ctrl.name.to_string(),
+                name: ctrl.name.clone(),
                 preamble: format_duration(ctrl.preamble_secs),
                 postamble: format_duration(ctrl.postamble_secs),
                 zones,
@@ -232,6 +239,7 @@ fn build_controllers(schedule: &Schedule) -> Vec<IuController> {
 /// TODO: Address this clippy issue
 #[allow(clippy::too_many_arguments)]
 fn build_weekday_sequences<F, G>(
+    setup: &IuSetup,
     controller_id: &str,
     zone_schedules: &HashMap<String, ZoneSchedule>,
     zone_active_days: &HashMap<String, Vec<String>>,
@@ -250,8 +258,12 @@ where
     // Build groups: (sorted-day-set, zones-in-that-group).
     let mut groups: Vec<(Vec<String>, Vec<IuSeqZone>)> = Vec::new();
 
-    for zone in ZONES.iter().filter(|z| z.controller_id == controller_id) {
-        let days = match zone_active_days.get(zone.id) {
+    for zone in setup
+        .zones
+        .iter()
+        .filter(|z| z.controller_id == controller_id)
+    {
+        let days = match zone_active_days.get(zone.id.as_str()) {
             Some(d) if !d.is_empty() => {
                 let mut sorted = d.clone();
                 sorted.sort_by_key(|d| DAY_ORDER.iter().position(|&o| o == d).unwrap_or(7));
@@ -260,13 +272,13 @@ where
             _ => continue,
         };
 
-        let secs = match zone_schedules.get(zone.id) {
+        let secs = match zone_schedules.get(zone.id.as_str()) {
             Some(zs) if is_enabled(zs) && get_secs(zs) > 0 => get_secs(zs),
             _ => continue,
         };
 
         let seq_zone = IuSeqZone {
-            zone_id: zone.id.to_string(),
+            zone_id: zone.id.clone(),
             duration: format_duration(secs),
         };
 
@@ -336,20 +348,22 @@ fn capitalize_first(s: &str) -> String {
 /// Build the sequence zone list for a single controller & session, including
 /// only zones that are enabled and have a non-zero duration.
 fn build_seq_zones(
+    setup: &IuSetup,
     controller_id: &str,
     zone_schedules: &HashMap<String, ZoneSchedule>,
     is_enabled: impl Fn(&ZoneSchedule) -> bool,
     get_secs: impl Fn(&ZoneSchedule) -> u32,
 ) -> Vec<IuSeqZone> {
-    ZONES
+    setup
+        .zones
         .iter()
         .filter(|z| z.controller_id == controller_id)
         .filter_map(|z| {
-            zone_schedules.get(z.id).and_then(|zs| {
+            zone_schedules.get(z.id.as_str()).and_then(|zs| {
                 let secs = get_secs(zs);
                 if is_enabled(zs) && secs > 0 {
                     Some(IuSeqZone {
-                        zone_id: z.id.to_string(),
+                        zone_id: z.id.clone(),
                         duration: format_duration(secs),
                     })
                 } else {
@@ -363,17 +377,19 @@ fn build_seq_zones(
 /// Build the sequence zone list for a manual run, including only zones that
 /// appear in `manual_zones` with a non-zero duration.
 fn build_manual_seq_zones(
+    setup: &IuSetup,
     controller_id: &str,
     manual_zones: &HashMap<String, u32>,
 ) -> Vec<IuSeqZone> {
-    ZONES
+    setup
+        .zones
         .iter()
         .filter(|z| z.controller_id == controller_id)
         .filter_map(|z| {
-            manual_zones.get(z.id).and_then(|&secs| {
+            manual_zones.get(z.id.as_str()).and_then(|&secs| {
                 if secs > 0 {
                     Some(IuSeqZone {
-                        zone_id: z.id.to_string(),
+                        zone_id: z.id.clone(),
                         duration: format_duration(secs),
                     })
                 } else {
@@ -410,12 +426,21 @@ fn format_duration(secs: u32) -> String {
 mod tests {
     use super::*;
     use crate::models::Schedule;
+    use crate::setup::IuSetup;
 
-    fn set_all_zone_days(schedule: &mut Schedule, days: Vec<String>) {
-        for zone in crate::definitions::ZONES {
+    /// Parse the dev config fixture at compile time.  This also ensures
+    /// `dev/config/iu-setup.yaml` is tracked in the repository — the compiler
+    /// will refuse to build if the file is missing.
+    fn test_setup() -> IuSetup {
+        let yaml = include_str!("../dev/config/iu-setup.yaml");
+        serde_yaml::from_str(yaml).expect("dev/config/iu-setup.yaml failed to parse")
+    }
+
+    fn set_all_zone_days(schedule: &mut Schedule, setup: &IuSetup, days: Vec<String>) {
+        for zone in &setup.zones {
             schedule
                 .zone_active_days
-                .insert(zone.id.into(), days.clone());
+                .insert(zone.id.clone(), days.clone());
         }
     }
 
@@ -430,8 +455,9 @@ mod tests {
 
     #[test]
     fn test_no_days_produces_no_sequences() {
-        let schedule = Schedule::default_seed(); // zone_active_days is empty
-        let yaml = generate_yaml(&schedule).unwrap();
+        let setup = test_setup();
+        let schedule = Schedule::default_seed_from(&setup); // zone_active_days is empty
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
         // sequences field should be absent when empty (skip_serializing_if)
         assert!(!yaml.contains("sequences"));
         assert!(yaml.contains("controllers"));
@@ -440,13 +466,15 @@ mod tests {
 
     #[test]
     fn test_morning_sequence_produced() {
-        let mut schedule = Schedule::default_seed();
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
         set_all_zone_days(
             &mut schedule,
+            &setup,
             vec!["mon".into(), "wed".into(), "fri".into()],
         );
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         assert!(
             yaml.contains("main_morning"),
@@ -458,10 +486,11 @@ mod tests {
 
     #[test]
     fn test_afternoon_sequence_produced() {
-        let mut schedule = Schedule::default_seed();
-        set_all_zone_days(&mut schedule, vec!["sat".into(), "sun".into()]);
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
+        set_all_zone_days(&mut schedule, &setup, vec!["sat".into(), "sun".into()]);
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         assert!(yaml.contains("main_afternoon"));
         assert!(yaml.contains("15:00"));
@@ -469,9 +498,11 @@ mod tests {
 
     #[test]
     fn test_all_seven_days_omits_weekday_field() {
-        let mut schedule = Schedule::default_seed();
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
         set_all_zone_days(
             &mut schedule,
+            &setup,
             vec![
                 "mon".into(),
                 "tue".into(),
@@ -483,7 +514,7 @@ mod tests {
             ],
         );
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         // weekday filter should be omitted when all 7 days selected
         assert!(
@@ -494,11 +525,16 @@ mod tests {
 
     #[test]
     fn test_disabled_zone_excluded_from_sequence() {
-        let mut schedule = Schedule::default_seed();
-        set_all_zone_days(&mut schedule, vec!["mon".into()]);
-        // zone_4 has morning_enabled: false, afternoon_enabled: false in default_seed
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
+        set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
+        // Explicitly disable zone_4 for both sessions.
+        if let Some(zs) = schedule.zones.get_mut("zone_4") {
+            zs.morning_enabled = false;
+            zs.afternoon_enabled = false;
+        }
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         // zone_4 must appear in the controller zones list (the physical definitions)
         assert!(
@@ -506,10 +542,7 @@ mod tests {
             "zone_4 should be in zone definitions"
         );
 
-        // But the sequence zones for front controller should only list zone_1,2,3
-        // We check that zone_4 does NOT appear as a duration entry by ensuring
-        // the duration lines are for zones 1-3 only.
-        // (spot-check: zone_3 enabled, zone_4 disabled)
+        // But zone_4 should NOT appear inside the sequences block.
         let lines: Vec<&str> = yaml.lines().collect();
         let mut in_sequences = false;
         for line in &lines {
@@ -524,10 +557,11 @@ mod tests {
 
     #[test]
     fn test_both_sessions_produced() {
-        let mut schedule = Schedule::default_seed();
-        set_all_zone_days(&mut schedule, vec!["mon".into()]);
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
+        set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         assert!(yaml.contains("main_morning"));
         assert!(yaml.contains("main_afternoon"));
@@ -535,11 +569,12 @@ mod tests {
 
     #[test]
     fn test_manual_sequence_emitted_when_zones_selected() {
-        let mut schedule = Schedule::default_seed();
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
         schedule.manual_zones.insert("zone_1".into(), 120);
         schedule.manual_zones.insert("zone_5".into(), 300);
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
 
         assert!(
             yaml.contains("sequence_id: manual"),
@@ -562,8 +597,9 @@ mod tests {
 
     #[test]
     fn test_manual_sequence_absent_when_no_zones() {
-        let schedule = Schedule::default_seed(); // manual_zones is empty
-        let yaml = generate_yaml(&schedule).unwrap();
+        let setup = test_setup();
+        let schedule = Schedule::default_seed_from(&setup); // manual_zones is empty
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
         assert!(
             !yaml.contains("manual"),
             "manual sequence should not appear when no zones selected"
@@ -573,9 +609,11 @@ mod tests {
     #[test]
     fn print_sample_yaml() {
         // Not a real assertion — useful for manual inspection during development.
-        let mut schedule = Schedule::default_seed();
+        let setup = test_setup();
+        let mut schedule = Schedule::default_seed_from(&setup);
         set_all_zone_days(
             &mut schedule,
+            &setup,
             vec![
                 "mon".into(),
                 "tue".into(),
@@ -587,7 +625,7 @@ mod tests {
             ],
         );
 
-        let yaml = generate_yaml(&schedule).unwrap();
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
         println!("\n--- Sample YAML ---\n{yaml}\n---");
     }
 }

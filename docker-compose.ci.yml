@@ -1,0 +1,35 @@
+# CI overlay — use pre-published ECR images instead of building from source.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+#
+# The base docker-compose.yml is still the source of truth for ports,
+# environment, volumes, and service dependencies.  This file only overrides
+# what differs in CI:
+#
+#   • iu-configurator: pull the published ECR image; no source build, no
+#     Cargo volume mounts, no hot-reload watcher.
+#   • homeassistant: keep the context build but accept IU_VERSION / IU_CARD_VERSION
+#     from the environment (for the weekly "latest IU" run)
+name: iu-dev
+
+services:
+  iu-configurator:
+    # Replace the dev build with the pre-published runtime image.
+    image: public.ecr.aws/j0s7z4j0/hopyard/iu-configurator:latest
+    build: !reset null
+    environment:
+      LEPTOS_ENV: PROD
+    # Strip the Cargo cache mounts — the binary is already in the image.
+    volumes:
+      - ./dev/config:/config
+    # No hot-reload watcher needed in CI.
+    develop: !reset null
+
+  homeassistant:
+    build:
+      context: dev/ha
+      args:
+        # Allow the weekly workflow to override these for "latest IU" runs.
+        IU_VERSION: "${IU_VERSION}"
+        IU_CARD_VERSION: "${IU_CARD_VERSION}"

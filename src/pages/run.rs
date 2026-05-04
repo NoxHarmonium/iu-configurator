@@ -4,49 +4,70 @@ use leptos::prelude::*;
 
 use super::use_status_polling;
 use crate::{
-    definitions::ZONES,
     pages::config::{mmss_to_secs, secs_to_mmss},
-    server_fns::{IrrigationStatus, cancel_run, get_irrigation_status, get_schedule, run_manual},
+    server_fns::{
+        IrrigationStatus, cancel_run, get_client_setup, get_irrigation_status, get_schedule,
+        run_manual,
+    },
 };
 
 #[component]
 pub fn RunPage() -> impl IntoView {
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
-    use_status_polling(move || status_res.refetch());
+    let setup_res = Resource::new(|| (), |_| get_client_setup());
 
-    // Per-zone signals: enabled (toggle) and duration string (MM:SS)
-    let zone_enabled: Vec<RwSignal<bool>> = ZONES.iter().map(|_| RwSignal::new(false)).collect();
-    let zone_duration: Vec<RwSignal<String>> = ZONES
-        .iter()
-        .map(|_| RwSignal::new("00:00".to_string()))
-        .collect();
+    let poll_ms = Signal::derive(move || {
+        setup_res
+            .get()
+            .and_then(|r| r.ok())
+            .map(|s| s.poll_interval_ms)
+            .unwrap_or(5000)
+    });
+    use_status_polling(move || status_res.refetch(), poll_ms);
 
-    // Populate duration defaults (afternoon_secs) once schedule loads
-    let zone_duration_init = zone_duration.clone();
+    // Per-zone state keyed by zone_id (populated once setup + schedule load).
+    let zone_enabled: RwSignal<HashMap<String, bool>> = RwSignal::new(HashMap::new());
+    let zone_duration: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());
+
+    // Initialise slots from setup (so all zones appear even before schedule loads).
     Effect::new(move |_| {
-        if let Some(Ok(s)) = schedule_res.get() {
-            for (i, zone_def) in ZONES.iter().enumerate() {
-                if let Some(zs) = s.zones.get(zone_def.id) {
-                    zone_duration_init[i].set(secs_to_mmss(zs.afternoon_secs));
+        if let Some(Ok(setup)) = setup_res.get() {
+            zone_enabled.update(|m| {
+                for z in &setup.zones {
+                    m.entry(z.id.clone()).or_insert(false);
                 }
-            }
+            });
+            zone_duration.update(|m| {
+                for z in &setup.zones {
+                    m.entry(z.id.clone()).or_insert_with(|| "00:00".to_string());
+                }
+            });
         }
     });
 
-    // Run action
-    let zone_enabled_run = zone_enabled.clone();
-    let zone_duration_run = zone_duration.clone();
+    // Populate duration defaults (afternoon_secs) once schedule loads.
+    Effect::new(move |_| {
+        if let Some(Ok(s)) = schedule_res.get() {
+            zone_duration.update(|m| {
+                for (id, zs) in &s.zones {
+                    m.insert(id.clone(), secs_to_mmss(zs.afternoon_secs));
+                }
+            });
+        }
+    });
+
+    // Run action — iterates zone_enabled keys so it needs no zone list reference.
     let run_action = Action::new(move |_: &()| {
-        let enabled_snap: Vec<bool> = zone_enabled_run.iter().map(|s| s.get()).collect();
-        let duration_snap: Vec<String> = zone_duration_run.iter().map(|s| s.get()).collect();
+        let enabled_snap = zone_enabled.get();
+        let duration_snap = zone_duration.get();
         async move {
             let mut manual_zones: HashMap<String, u32> = HashMap::new();
-            for (i, zone_def) in ZONES.iter().enumerate() {
-                if enabled_snap[i] {
-                    let secs = mmss_to_secs(&duration_snap[i]);
+            for (id, &is_enabled) in &enabled_snap {
+                if is_enabled {
+                    let secs = duration_snap.get(id).map(|d| mmss_to_secs(d)).unwrap_or(0);
                     if secs > 0 {
-                        manual_zones.insert(zone_def.id.to_string(), secs);
+                        manual_zones.insert(id.clone(), secs);
                     }
                 }
             }
@@ -125,93 +146,112 @@ pub fn RunPage() -> impl IntoView {
             // ── Zone table ───────────────────────────────────────────────────
             <Transition fallback=|| view! { <p class="loading">"Loading zones…"</p> }>
                 {move || {
-                    schedule_res.get().map(|result| match result {
-                        Err(e) => view! {
-                            <p class="error">{format!("Failed to load schedule: {e}")}</p>
-                        }.into_any(),
-                        Ok(_) => {
-                            let zone_enabled_view = zone_enabled.clone();
-                            let zone_duration_view = zone_duration.clone();
-
+                    let setup = match (setup_res.get(), schedule_res.get()) {
+                        (None, _) | (_, None) => return None,
+                        (Some(Err(e)), _) => return Some(
+                            view! { <p class="error">{format!("Failed to load setup: {e}")}</p> }
+                                .into_any(),
+                        ),
+                        (_, Some(Err(e))) => return Some(
                             view! {
-                                <div class="zone-table">
-                                    <div class="zone-table__header">
-                                        <span>"Zone"</span>
-                                        <span>"Run"</span>
-                                        <span>"Duration (MM:SS)"</span>
+                                <p class="error">{format!("Failed to load schedule: {e}")}</p>
+                            }
+                            .into_any(),
+                        ),
+                        (Some(Ok(s)), Some(Ok(_))) => s,
+                    };
+
+                    Some(view! {
+                        <div class="zone-table">
+                            <div class="zone-table__header">
+                                <span>"Zone"</span>
+                                <span>"Run"</span>
+                                <span>"Duration (MM:SS)"</span>
+                            </div>
+                            {setup.zones.into_iter().map(|zone| {
+                                let zid1 = zone.id.clone();
+                                let zid2 = zone.id.clone();
+                                let zid3 = zone.id.clone();
+                                let zid4 = zone.id;
+                                let zone_name = zone.name;
+
+                                view! {
+                                    <div class="zone-table__row">
+                                        <span class="zone-table__name">{zone_name}</span>
+
+                                        // Enable toggle
+                                        <label class="toggle">
+                                            <input
+                                                type="checkbox"
+                                                class="toggle__input"
+                                                prop:checked=move || {
+                                                    zone_enabled.get().get(&zid1).copied().unwrap_or(false)
+                                                }
+                                                prop:disabled=move || is_active() || is_running.get()
+                                                on:change=move |ev| {
+                                                    zone_enabled.update(|m| {
+                                                        m.insert(zid2.clone(), event_target_checked(&ev));
+                                                    });
+                                                    run_ok.set(false);
+                                                }
+                                            />
+                                            <span class="toggle__slider"></span>
+                                        </label>
+
+                                        // Duration input
+                                        <input
+                                            type="text"
+                                            class="field-row__input field-row__input--duration"
+                                            placeholder="MM:SS"
+                                            prop:value=move || {
+                                                zone_duration
+                                                    .get()
+                                                    .get(&zid3)
+                                                    .cloned()
+                                                    .unwrap_or_default()
+                                            }
+                                            prop:disabled=move || is_active() || is_running.get()
+                                            on:input=move |ev| {
+                                                zone_duration.update(|m| {
+                                                    m.insert(zid4.clone(), event_target_value(&ev));
+                                                });
+                                                run_ok.set(false);
+                                            }
+                                        />
                                     </div>
-                                    {ZONES.iter().enumerate().map(|(i, zone_def)| {
-                                        let enabled_sig = zone_enabled_view[i];
-                                        let duration_sig = zone_duration_view[i];
-                                        let name = zone_def.name;
+                                }
+                            }).collect_view()}
+                        </div>
 
-                                        view! {
-                                            <div class="zone-table__row">
-                                                <span class="zone-table__name">{name}</span>
-
-                                                // Enable toggle
-                                                <label class="toggle">
-                                                    <input
-                                                        type="checkbox"
-                                                        class="toggle__input"
-                                                        prop:checked=move || enabled_sig.get()
-                                                        prop:disabled=move || is_active() || is_running.get()
-                                                        on:change=move |ev| {
-                                                            enabled_sig.set(event_target_checked(&ev));
-                                                            run_ok.set(false);
-                                                        }
-                                                    />
-                                                    <span class="toggle__slider"></span>
-                                                </label>
-
-                                                // Duration input
-                                                <input
-                                                    type="text"
-                                                    class="field-row__input field-row__input--duration"
-                                                    placeholder="MM:SS"
-                                                    prop:value=move || duration_sig.get()
-                                                    prop:disabled=move || is_active() || is_running.get()
-                                                    on:input=move |ev| {
-                                                        duration_sig.set(event_target_value(&ev));
-                                                        run_ok.set(false);
-                                                    }
-                                                />
-                                            </div>
-                                        }
-                                    }).collect_view()}
-                                </div>
-
-                                // ── Run / stop buttons ───────────────────────
-                                <div class="form-actions">
-                                    <button
-                                        type="button"
-                                        class="btn btn--primary"
-                                        prop:disabled=move || is_active() || is_running.get()
-                                        on:click=move |_| { run_action.dispatch(()); }
-                                    >
-                                        {move || if is_running.get() { "Starting…" } else { "Force Run" }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn--danger"
-                                        prop:disabled=move || !is_active() || is_cancelling.get()
-                                        on:click=move |_| { cancel_action.dispatch(()); }
-                                    >
-                                        {move || if is_cancelling.get() { "Stopping…" } else { "⏹ Emergency Stop" }}
-                                    </button>
-                                    {move || run_error.get().map(|e| view! {
-                                        <p class="error">"Error: " {e}</p>
-                                    })}
-                                    {move || cancel_error.get().map(|e| view! {
-                                        <p class="error">"Stop error: " {e}</p>
-                                    })}
-                                    {move || run_ok.get().then(|| view! {
-                                        <p class="success">"✓ Manual run triggered."</p>
-                                    })}
-                                </div>
-                            }.into_any()
-                        }
-                    })
+                        // ── Run / stop buttons ───────────────────────
+                        <div class="form-actions">
+                            <button
+                                type="button"
+                                class="btn btn--primary"
+                                prop:disabled=move || is_active() || is_running.get()
+                                on:click=move |_| { run_action.dispatch(()); }
+                            >
+                                {move || if is_running.get() { "Starting…" } else { "Force Run" }}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn--danger"
+                                prop:disabled=move || !is_active() || is_cancelling.get()
+                                on:click=move |_| { cancel_action.dispatch(()); }
+                            >
+                                {move || if is_cancelling.get() { "Stopping…" } else { "⏹ Emergency Stop" }}
+                            </button>
+                            {move || run_error.get().map(|e| view! {
+                                <p class="error">"Error: " {e}</p>
+                            })}
+                            {move || cancel_error.get().map(|e| view! {
+                                <p class="error">"Stop error: " {e}</p>
+                            })}
+                            {move || run_ok.get().then(|| view! {
+                                <p class="success">"✓ Manual run triggered."</p>
+                            })}
+                        </div>
+                    }.into_any())
                 }}
             </Transition>
         </div>

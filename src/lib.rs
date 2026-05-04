@@ -1,5 +1,4 @@
 pub mod app;
-pub mod definitions;
 pub mod models;
 pub mod pages;
 pub mod server_fns;
@@ -8,6 +7,8 @@ pub mod server_fns;
 pub mod config;
 #[cfg(feature = "ssr")]
 pub mod handlers;
+#[cfg(feature = "ssr")]
+pub mod setup;
 #[cfg(feature = "ssr")]
 pub mod yaml_gen;
 

@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 
 use super::use_status_polling;
-use crate::definitions::ZONES;
 use crate::models::ScheduleMode;
 use crate::server_fns::{
-    IrrigationStatus, get_irrigation_status, get_schedule, get_weather_forecast, save_schedule,
+    IrrigationStatus, get_client_setup, get_irrigation_status, get_schedule, get_weather_forecast,
+    save_schedule,
 };
 
 const DAYS: &[(&str, &str)] = &[
@@ -25,7 +25,24 @@ pub fn SchedulePage() -> impl IntoView {
     let schedule_res = Resource::new(|| (), |_| get_schedule());
     let status_res = Resource::new(|| (), |_| get_irrigation_status());
     let weather_res = Resource::new(|| (), |_| get_weather_forecast());
-    use_status_polling(move || status_res.refetch());
+    let setup_res = Resource::new(|| (), |_| get_client_setup());
+
+    let poll_ms = Signal::derive(move || {
+        setup_res
+            .get()
+            .and_then(|r| r.ok())
+            .map(|s| s.poll_interval_ms)
+            .unwrap_or(5000)
+    });
+    use_status_polling(move || status_res.refetch(), poll_ms);
+
+    // Zone IDs from setup — used by helper closures before the view renders.
+    let zone_ids: RwSignal<Vec<String>> = RwSignal::new(vec![]);
+    Effect::new(move |_| {
+        if let Some(Ok(setup)) = setup_res.get() {
+            zone_ids.set(setup.zones.iter().map(|z| z.id.clone()).collect());
+        }
+    });
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
     let zone_active_days: RwSignal<HashMap<String, Vec<String>>> = RwSignal::new(HashMap::new());
@@ -93,7 +110,7 @@ pub fn SchedulePage() -> impl IntoView {
     };
 
     // ── Zone×Day matrix helpers ──────────────────────────────────────────
-    let zone_has_day = move |zone_id: &'static str, day: &'static str| -> bool {
+    let zone_has_day = move |zone_id: &str, day: &'static str| -> bool {
         zone_active_days
             .get()
             .get(zone_id)
@@ -103,8 +120,8 @@ pub fn SchedulePage() -> impl IntoView {
 
     let all_zones_have_day = move |day: &'static str| -> bool {
         let map = zone_active_days.get();
-        ZONES.iter().all(|z| {
-            map.get(z.id)
+        zone_ids.get().iter().all(|id| {
+            map.get(id.as_str())
                 .map(|d| d.iter().any(|s| s == day))
                 .unwrap_or(false)
         })
@@ -112,14 +129,14 @@ pub fn SchedulePage() -> impl IntoView {
 
     let some_zones_have_day = move |day: &'static str| -> bool {
         let map = zone_active_days.get();
-        ZONES.iter().any(|z| {
-            map.get(z.id)
+        zone_ids.get().iter().any(|id| {
+            map.get(id.as_str())
                 .map(|d| d.iter().any(|s| s == day))
                 .unwrap_or(false)
         })
     };
 
-    let toggle_zone_day = move |zone_id: &'static str, day: &'static str, checked: bool| {
+    let toggle_zone_day = move |zone_id: &str, day: &'static str, checked: bool| {
         zone_active_days.update(|map| {
             let days = map.entry(zone_id.to_string()).or_default();
             if checked {
@@ -134,9 +151,10 @@ pub fn SchedulePage() -> impl IntoView {
     };
 
     let toggle_all_for_day = move |day: &'static str, checked: bool| {
+        let ids = zone_ids.get();
         zone_active_days.update(|map| {
-            for zone in ZONES {
-                let days = map.entry(zone.id.to_string()).or_default();
+            for id in &ids {
+                let days = map.entry(id.clone()).or_default();
                 if checked {
                     if !days.iter().any(|d| d == day) {
                         days.push(day.to_string());
@@ -177,185 +195,201 @@ pub fn SchedulePage() -> impl IntoView {
             // ── Day grid ─────────────────────────────────────────────────────
             <Transition fallback=|| view! { <p class="loading">"Loading schedule…"</p> }>
                 {move || {
-                    schedule_res.get().map(|result| match result {
-                        Err(e) => view! {
-                            <p class="error">{format!("Failed to load schedule: {e}")}</p>
-                        }.into_any(),
-                        Ok(_) => {
-                            let is_active = move || {
-                                status_res.get()
-                                    .and_then(|r| r.ok())
-                                    .map(|s| s == IrrigationStatus::Active)
-                                    .unwrap_or(false)
-                            };
-
+                    // Wait for both setup and schedule to be available.
+                    let setup = match (setup_res.get(), schedule_res.get()) {
+                        (None, _) | (_, None) => return None,
+                        (Some(Err(e)), _) => return Some(
                             view! {
-                                // ── Mode selector ────────────────────────────
-                                <div class="mode-selector">
-                                    <label class="mode-selector__label">"Schedule mode"</label>
-                                    <select
-                                        class="mode-selector__select"
-                                        prop:value=move || if schedule_mode.get() == ScheduleMode::Periodic { "periodic" } else { "weekday" }
-                                        prop:disabled=move || is_active() || is_saving.get()
-                                        on:change=move |ev| {
-                                            let value = event_target_value(&ev);
-                                            schedule_mode.set(
-                                                if value == "periodic" { ScheduleMode::Periodic } else { ScheduleMode::Weekday }
-                                            );
-                                            save_ok.set(false);
-                                        }
-                                    >
-                                        <option value="weekday">"Weekly (days of week)"</option>
-                                        <option value="periodic">"Periodic (every N days)"</option>
-                                    </select>
-                                </div>
+                                <p class="error">{format!("Failed to load setup: {e}")}</p>
+                            }
+                            .into_any(),
+                        ),
+                        (_, Some(Err(e))) => return Some(
+                            view! {
+                                <p class="error">{format!("Failed to load schedule: {e}")}</p>
+                            }
+                            .into_any(),
+                        ),
+                        (Some(Ok(s)), Some(Ok(_))) => s,
+                    };
 
-                                // ── Weekday or Periodic content ──────────────
-                                {move || match schedule_mode.get() {
-                                    ScheduleMode::Weekday => view! {
-                                        // ── Mobile weather bar ───────────────
-                                        <div class="weather-bar">
+                    {
+                        let zones = setup.zones;
+                        let is_active = move || {
+                            status_res.get()
+                                .and_then(|r| r.ok())
+                                .map(|s| s == IrrigationStatus::Active)
+                                .unwrap_or(false)
+                        };
+
+                        Some(view! {
+                            // ── Mode selector ────────────────────────────
+                            <div class="mode-selector">
+                                <label class="mode-selector__label">"Schedule mode"</label>
+                                <select
+                                    class="mode-selector__select"
+                                    prop:value=move || if schedule_mode.get() == ScheduleMode::Periodic { "periodic" } else { "weekday" }
+                                    prop:disabled=move || is_active() || is_saving.get()
+                                    on:change=move |ev| {
+                                        let value = event_target_value(&ev);
+                                        schedule_mode.set(
+                                            if value == "periodic" { ScheduleMode::Periodic } else { ScheduleMode::Weekday }
+                                        );
+                                        save_ok.set(false);
+                                    }
+                                >
+                                    <option value="weekday">"Weekly (days of week)"</option>
+                                    <option value="periodic">"Periodic (every N days)"</option>
+                                </select>
+                            </div>
+
+                            // ── Weekday or Periodic content ──────────────
+                            {move || match schedule_mode.get() {
+                                ScheduleMode::Weekday => view! {
+                                    // ── Mobile weather bar ───────────────
+                                    <div class="weather-bar">
+                                        {DAYS.iter().map(|(day_key, day_label)| {
+                                            let day_key = *day_key;
+                                            let day_abbr = &day_label[..3];
+                                            view! {
+                                                <div class="weather-bar__chip">
+                                                    <span class="weather-bar__day">{day_abbr}</span>
+                                                    <span class="weather-bar__icon">
+                                                        {move || weather_res.get()
+                                                            .and_then(|r| r.ok())
+                                                            .and_then(|m| m.get(day_key).cloned())
+                                                            .unwrap_or_default()}
+                                                    </span>
+                                                </div>
+                                            }
+                                        }).collect_view()}
+                                    </div>
+
+                                    <div class="zone-day-matrix">
+                                        // Header: zone label + one checkbox-column per day
+                                        <div class="zone-day-matrix__row zone-day-matrix__row--header">
+                                            <span class="zone-day-matrix__zone-label zone-day-matrix__zone-label--header">"Zone"</span>
                                             {DAYS.iter().map(|(day_key, day_label)| {
                                                 let day_key = *day_key;
+                                                let day_label = *day_label;
                                                 let day_abbr = &day_label[..3];
                                                 view! {
-                                                    <div class="weather-bar__chip">
-                                                        <span class="weather-bar__day">{day_abbr}</span>
-                                                        <span class="weather-bar__icon">
-                                                            {move || weather_res.get()
-                                                                .and_then(|r| r.ok())
-                                                                .and_then(|m| m.get(day_key).cloned())
-                                                                .unwrap_or_default()}
-                                                        </span>
+                                                    <div class="zone-day-matrix__day-header">
+                                                        <label title=format!("Toggle all zones for {day_label}")>
+                                                            <span class="zone-day-matrix__weather-icon">
+                                                                {move || weather_res.get()
+                                                                    .and_then(|r| r.ok())
+                                                                    .and_then(|m| m.get(day_key).cloned())
+                                                                    .unwrap_or_default()}
+                                                            </span>
+                                                            <span class="zone-day-matrix__day-abbr">{day_abbr}</span>
+                                                            <input
+                                                                type="checkbox"
+                                                                class="zone-day-matrix__check"
+                                                                prop:checked=move || all_zones_have_day(day_key)
+                                                                prop:indeterminate=move || some_zones_have_day(day_key) && !all_zones_have_day(day_key)
+                                                                prop:disabled=move || is_active() || is_saving.get()
+                                                                on:change=move |ev| {
+                                                                    let checked = event_target_checked(&ev);
+                                                                    toggle_all_for_day(day_key, checked);
+                                                                }
+                                                            />
+                                                        </label>
                                                     </div>
                                                 }
                                             }).collect_view()}
                                         </div>
-
-                                        <div class="zone-day-matrix">
-                                            // Header: zone label + one checkbox-column per day
-                                            <div class="zone-day-matrix__row zone-day-matrix__row--header">
-                                                <span class="zone-day-matrix__zone-label zone-day-matrix__zone-label--header">"Zone"</span>
-                                                {DAYS.iter().map(|(day_key, day_label)| {
-                                                    let day_key = *day_key;
-                                                    let day_label = *day_label;
-                                                    let day_abbr = &day_label[..3];
-                                                    view! {
-                                                        <div class="zone-day-matrix__day-header">
-                                                            <label title=format!("Toggle all zones for {day_label}")>
-                                                                <span class="zone-day-matrix__weather-icon">
-                                                                    {move || weather_res.get()
-                                                                        .and_then(|r| r.ok())
-                                                                        .and_then(|m| m.get(day_key).cloned())
-                                                                        .unwrap_or_default()}
-                                                                </span>
-                                                                <span class="zone-day-matrix__day-abbr">{day_abbr}</span>
+                                        // Data rows: one per zone (from setup)
+                                        {zones.iter().map(|zone| {
+                                            let zone_name = zone.name.clone();
+                                            let zone_id = zone.id.clone();
+                                            view! {
+                                                <div class="zone-day-matrix__row">
+                                                    <span class="zone-day-matrix__zone-label">{zone_name}</span>
+                                                    {DAYS.iter().map(|(day_key, day_label)| {
+                                                        let day_key = *day_key;
+                                                        let day_abbr = &day_label[..2];
+                                                        let zid1 = zone_id.clone();
+                                                        let zid2 = zone_id.clone();
+                                                        view! {
+                                                            <label class="zone-day-matrix__cell">
+                                                                <span class="zone-day-matrix__cell-day">{day_abbr}</span>
                                                                 <input
                                                                     type="checkbox"
                                                                     class="zone-day-matrix__check"
-                                                                    prop:checked=move || all_zones_have_day(day_key)
-                                                                    prop:indeterminate=move || some_zones_have_day(day_key) && !all_zones_have_day(day_key)
+                                                                    prop:checked=move || zone_has_day(&zid1, day_key)
                                                                     prop:disabled=move || is_active() || is_saving.get()
                                                                     on:change=move |ev| {
                                                                         let checked = event_target_checked(&ev);
-                                                                        toggle_all_for_day(day_key, checked);
+                                                                        toggle_zone_day(&zid2, day_key, checked);
                                                                     }
                                                                 />
                                                             </label>
-                                                        </div>
-                                                    }
-                                                }).collect_view()}
-                                            </div>
-                                            // Data rows: one per zone
-                                            {ZONES.iter().map(|zone| {
-                                                let zone_id = zone.id;
-                                                let zone_name = zone.name;
-                                                view! {
-                                                    <div class="zone-day-matrix__row">
-                                                        <span class="zone-day-matrix__zone-label">{zone_name}</span>
-                                                        {DAYS.iter().map(|(day_key, day_label)| {
-                                                            let day_key = *day_key;
-                                                            let day_abbr = &day_label[..2];
-                                                            view! {
-                                                                <label class="zone-day-matrix__cell">
-                                                                    <span class="zone-day-matrix__cell-day">{day_abbr}</span>
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        class="zone-day-matrix__check"
-                                                                        prop:checked=move || zone_has_day(zone_id, day_key)
-                                                                        prop:disabled=move || is_active() || is_saving.get()
-                                                                        on:change=move |ev| {
-                                                                            let checked = event_target_checked(&ev);
-                                                                            toggle_zone_day(zone_id, day_key, checked);
-                                                                        }
-                                                                    />
-                                                                </label>
-                                                            }
-                                                        }).collect_view()}
-                                                    </div>
+                                                        }
+                                                    }).collect_view()}
+                                                </div>
+                                            }
+                                        }).collect_view()}
+                                    </div>
+                                }.into_any(),
+                                ScheduleMode::Periodic => view! {
+                                    <div class="periodic-form">
+                                        <div class="field-row">
+                                            <label class="field-row__label">"Start date (anchor)"</label>
+                                            <input
+                                                type="date"
+                                                class="field-row__input"
+                                                prop:value=move || period_anchor.get()
+                                                prop:disabled=move || is_active() || is_saving.get()
+                                                on:change=move |ev| {
+                                                    period_anchor.set(event_target_value(&ev));
+                                                    save_ok.set(false);
                                                 }
-                                            }).collect_view()}
+                                            />
                                         </div>
-                                    }.into_any(),
-                                    ScheduleMode::Periodic => view! {
-                                        <div class="periodic-form">
-                                            <div class="field-row">
-                                                <label class="field-row__label">"Start date (anchor)"</label>
-                                                <input
-                                                    type="date"
-                                                    class="field-row__input"
-                                                    prop:value=move || period_anchor.get()
-                                                    prop:disabled=move || is_active() || is_saving.get()
-                                                    on:change=move |ev| {
-                                                        period_anchor.set(event_target_value(&ev));
-                                                        save_ok.set(false);
-                                                    }
-                                                />
-                                            </div>
-                                            <div class="field-row">
-                                                <label class="field-row__label">"Repeat every (days)"</label>
-                                                <input
-                                                    type="number"
-                                                    class="field-row__input"
-                                                    min="1"
-                                                    prop:value=move || period_days.get().to_string()
-                                                    prop:disabled=move || is_active() || is_saving.get()
-                                                    on:change=move |ev| {
-                                                        let v = event_target_value(&ev)
-                                                            .parse::<u32>()
-                                                            .unwrap_or(2)
-                                                            .max(1);
-                                                        period_days.set(v);
-                                                        save_ok.set(false);
-                                                    }
-                                                />
-                                            </div>
+                                        <div class="field-row">
+                                            <label class="field-row__label">"Repeat every (days)"</label>
+                                            <input
+                                                type="number"
+                                                class="field-row__input"
+                                                min="1"
+                                                prop:value=move || period_days.get().to_string()
+                                                prop:disabled=move || is_active() || is_saving.get()
+                                                on:change=move |ev| {
+                                                    let v = event_target_value(&ev)
+                                                        .parse::<u32>()
+                                                        .unwrap_or(2)
+                                                        .max(1);
+                                                    period_days.set(v);
+                                                    save_ok.set(false);
+                                                }
+                                            />
                                         </div>
-                                    }.into_any(),
-                                }}
+                                    </div>
+                                }.into_any(),
+                            }}
 
-                                // ── Save button ──────────────────────────────
-                                <div class="form-actions">
-                                    <button
-                                        class="btn btn--primary"
-                                        prop:disabled=move || is_active() || is_saving.get() || validation_error().is_some()
-                                        on:click=move |_| { save_action.dispatch(()); }
-                                    >
-                                        {move || if is_saving.get() { "Saving…" } else { "Save" }}
-                                    </button>
-                                    {move || validation_error().map(|msg| view! {
-                                        <p class="error">{msg}</p>
-                                    })}
-                                    {move || save_error.get().map(|e| view! {
-                                        <p class="error">"Error: " {e}</p>
-                                    })}
-                                    {move || save_ok.get().then(|| view! {
-                                        <p class="success">"✓ Schedule saved."</p>
-                                    })}
-                                </div>
-                            }.into_any()
-                        }
-                    })
+                            // ── Save button ──────────────────────────────
+                            <div class="form-actions">
+                                <button
+                                    class="btn btn--primary"
+                                    prop:disabled=move || is_active() || is_saving.get() || validation_error().is_some()
+                                    on:click=move |_| { save_action.dispatch(()); }
+                                >
+                                    {move || if is_saving.get() { "Saving…" } else { "Save" }}
+                                </button>
+                                {move || validation_error().map(|msg| view! {
+                                    <p class="error">{msg}</p>
+                                })}
+                                {move || save_error.get().map(|e| view! {
+                                    <p class="error">"Error: " {e}</p>
+                                })}
+                                {move || save_ok.get().then(|| view! {
+                                    <p class="success">"✓ Schedule saved."</p>
+                                })}
+                            </div>
+                        }.into_any())
+                    }
                 }}
             </Transition>
         </div>

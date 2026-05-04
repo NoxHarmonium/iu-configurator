@@ -1,0 +1,72 @@
+# iu-setup.yaml — irrigation setup configuration
+#
+# Place this file in CONFIG_DIR (default: /config) alongside iu-schedule.json.
+# Edit it to describe YOUR controllers, zones, and seeding defaults.
+# Restart the app after any changes.
+
+# How often the browser polls Home Assistant for the current irrigation status (ms).
+poll_interval_ms: 5000
+
+controllers:
+  - id: main
+    name: Irrigation
+    # Seconds the master valve opens before any zone starts.
+    preamble_secs: 15
+    # Seconds the master valve stays open after all zones finish.
+    postamble_secs: 15
+    # Seconds between successive zones in a sequence.
+    delay_secs: 5
+    # Home Assistant entity_id of the master binary sensor (used for status polling,
+    # manual_run, and cancel service calls).
+    ha_master_entity: binary_sensor.irrigation_unlimited_c1_m
+
+zones:
+  - id: zone_1
+    controller_id: main
+    name: "1. Balcony Pots"
+    entity_id: switch.front_irrigation_controller_l1
+
+  - id: zone_2
+    controller_id: main
+    name: "2. Driveway Pots"
+    entity_id: switch.front_irrigation_controller_l2
+
+  - id: zone_3
+    controller_id: main
+    name: "3. Front Garden Bed"
+    entity_id: switch.front_irrigation_controller_l3
+
+  - id: zone_4
+    controller_id: main
+    name: "4. Natives"
+    entity_id: input_boolean.irrigation_zone_4
+
+  - id: zone_5
+    controller_id: main
+    name: "5. Deck Planter Boxes"
+    entity_id: switch.irrigation_controller_l1
+
+  - id: zone_6
+    controller_id: main
+    name: "6. Around Lemon Tree"
+    entity_id: switch.irrigation_controller_l2
+
+  - id: zone_7
+    controller_id: main
+    name: "7. Vege Patch"
+    entity_id: switch.irrigation_controller_l3
+
+  - id: zone_8
+    controller_id: main
+    name: "8. Fernararium"
+    entity_id: switch.irrigation_controller_l4
+
+# Defaults applied to every zone when iu-schedule.json does not yet exist.
+# Once saved, these values are stored in the schedule file and can be changed per-zone via the UI.
+defaults:
+  morning_time: "07:00"
+  afternoon_time: "15:00"
+  zone_morning_secs: 300
+  zone_afternoon_secs: 300
+  zone_morning_enabled: true
+  zone_afternoon_enabled: true

@@ -59,93 +59,26 @@ pub struct Schedule {
     pub period_days: u32,
 }
 
-// TODO: Make default schedules configurable via config file
 impl Schedule {
-    /// Seed defaults based on the Winter – Regular schedule.
-    /// All days start as OFF; user enables them via the UI.
-    pub fn default_seed() -> Self {
+    /// Build a seed schedule from the user's setup configuration.
+    /// All zone active days start empty; the user configures them via the UI.
+    #[cfg(feature = "ssr")]
+    pub fn default_seed_from(setup: &crate::setup::IuSetup) -> Self {
         let mut zones = HashMap::new();
-
-        // Controller "front" — Winter Regular durations
-        zones.insert(
-            "zone_1".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 60,
-                afternoon_secs: 60,
-            },
-        );
-        zones.insert(
-            "zone_2".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 30,
-                afternoon_secs: 30,
-            },
-        );
-        zones.insert(
-            "zone_3".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 1200,
-                afternoon_secs: 1200,
-            },
-        );
-        // Disabled by default — no sprinklers installed yet
-        zones.insert(
-            "zone_4".into(),
-            ZoneSchedule {
-                morning_enabled: false,
-                afternoon_enabled: false,
-                morning_secs: 300,
-                afternoon_secs: 300,
-            },
-        );
-
-        // Controller "back" — Winter Regular durations
-        zones.insert(
-            "zone_5".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 180,
-                afternoon_secs: 180,
-            },
-        );
-        zones.insert(
-            "zone_6".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 600,
-                afternoon_secs: 600,
-            },
-        );
-        zones.insert(
-            "zone_7".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 600,
-                afternoon_secs: 600,
-            },
-        );
-        zones.insert(
-            "zone_8".into(),
-            ZoneSchedule {
-                morning_enabled: true,
-                afternoon_enabled: true,
-                morning_secs: 600,
-                afternoon_secs: 600,
-            },
-        );
-
+        for zone in &setup.zones {
+            zones.insert(
+                zone.id.clone(),
+                ZoneSchedule {
+                    morning_enabled: setup.defaults.zone_morning_enabled,
+                    afternoon_enabled: setup.defaults.zone_afternoon_enabled,
+                    morning_secs: setup.defaults.zone_morning_secs,
+                    afternoon_secs: setup.defaults.zone_afternoon_secs,
+                },
+            );
+        }
         Schedule {
-            morning_time: "07:00".into(),
-            afternoon_time: "15:00".into(),
+            morning_time: setup.defaults.morning_time.clone(),
+            afternoon_time: setup.defaults.afternoon_time.clone(),
             zone_active_days: HashMap::new(),
             zones,
             manual_zones: HashMap::new(),

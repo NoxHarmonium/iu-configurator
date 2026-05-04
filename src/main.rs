@@ -4,7 +4,7 @@ async fn main() {
     use std::env;
 
     use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, config::Config, handlers};
+    use iu_configurator::{app::*, config::Config, handlers, setup::IuSetup};
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
@@ -22,6 +22,9 @@ async fn main() {
         .init();
 
     let config = envy::from_env::<Config>().expect("invalid configuration");
+    let setup = IuSetup::load(&config.config_dir)
+        .await
+        .expect("Failed to load iu-setup.yaml — place this file in CONFIG_DIR (default: /config)");
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
@@ -64,7 +67,8 @@ async fn main() {
                 ),
         )
         .with_state(leptos_options)
-        .layer(Extension(config));
+        .layer(Extension(config))
+        .layer(Extension(setup));
 
     tracing::info!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

@@ -85,4 +85,7 @@ ENV CONFIG_DIR=/config
 # App server port 3000; leptos hot-reload WebSocket port 3001
 EXPOSE 3000 3001
 
+# Pre-build dev build so the container doesn't have to do as much when it starts
+RUN cargo leptos build 2>&1
+
 CMD ["cargo", "leptos", "watch"]

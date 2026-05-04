@@ -23,9 +23,44 @@ pub enum IrrigationStatus {
     Unknown(String),
 }
 
+/// Minimal zone info sent to the WASM client — no HA entity IDs exposed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClientZoneInfo {
+    pub id: String,
+    pub name: String,
+}
+
+/// Setup data the client needs to render the UI dynamically.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClientSetupInfo {
+    pub zones: Vec<ClientZoneInfo>,
+    pub poll_interval_ms: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Server functions
 // ---------------------------------------------------------------------------
+
+/// Return the subset of iu-setup.yaml that the WASM client needs.
+#[server]
+pub async fn get_client_setup() -> Result<ClientSetupInfo, ServerFnError> {
+    use crate::setup::IuSetup;
+
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    Ok(ClientSetupInfo {
+        zones: setup
+            .zones
+            .iter()
+            .map(|z| ClientZoneInfo {
+                id: z.id.clone(),
+                name: z.name.clone(),
+            })
+            .collect(),
+        poll_interval_ms: setup.poll_interval_ms,
+    })
+}
 
 /// Load the current schedule from `$CONFIG_DIR/iu-schedule.json`.
 /// Returns seeded defaults if the file does not yet exist.
@@ -38,6 +73,11 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let path = PathBuf::from(&config.config_dir).join("iu-schedule.json");
 
+    use crate::setup::IuSetup;
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
     if path.exists() {
         tracing::info!(path = %path.display(), "loading schedule from file");
         let content = tokio::fs::read_to_string(&path)
@@ -47,7 +87,7 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))
     } else {
         tracing::info!("no schedule file found, returning defaults");
-        Ok(Schedule::default_seed())
+        Ok(Schedule::default_seed_from(&setup))
     }
 }
 
@@ -59,9 +99,13 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
 pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
     use std::path::PathBuf;
 
+    use crate::setup::IuSetup;
     use crate::yaml_gen::generate_yaml;
 
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let config_path = PathBuf::from(&config.config_dir);
@@ -79,7 +123,7 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("Failed to write iu-schedule.json: {e}")))?;
 
     // ── irrigation_unlimited.yaml ──────────────────────────────────────────
-    let yaml = generate_yaml(&schedule)
+    let yaml = generate_yaml(&schedule, &setup)
         .map_err(|e| ServerFnError::new(format!("Failed to generate YAML: {e}")))?;
     tokio::fs::write(config_path.join("irrigation_unlimited.yaml"), yaml)
         .await
@@ -105,9 +149,12 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
 /// `IrrigationStatus::Unknown` so the UI degrades gracefully.
 #[server]
 pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> {
-    use crate::definitions::CONTROLLERS;
+    use crate::setup::IuSetup;
 
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
 
@@ -120,8 +167,8 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
     let base = ha_url.trim_end_matches('/');
     let client = reqwest::Client::new();
 
-    for controller in CONTROLLERS {
-        let url = format!("{}/api/states/{}", base, controller.ha_master_entity);
+    for controller in &setup.controllers {
+        let url = format!("{}/api/states/{}", base, &controller.ha_master_entity);
 
         let response = match client
             .get(&url)
@@ -163,6 +210,7 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
 pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), ServerFnError> {
     use std::path::PathBuf;
 
+    use crate::setup::IuSetup;
     use crate::yaml_gen::generate_yaml;
 
     let has_zones = manual_zones.values().any(|&s| s > 0);
@@ -173,6 +221,9 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     tracing::info!(zones = ?manual_zones, "starting manual run");
 
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let config_path = PathBuf::from(&config.config_dir);
@@ -190,7 +241,7 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
         serde_json::from_str(&content)
             .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))?
     } else {
-        Schedule::default_seed()
+        Schedule::default_seed_from(&setup)
     };
 
     schedule.manual_zones = manual_zones;
@@ -201,7 +252,7 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to write iu-schedule.json: {e}")))?;
 
-    let yaml = generate_yaml(&schedule)
+    let yaml = generate_yaml(&schedule, &setup)
         .map_err(|e| ServerFnError::new(format!("Failed to generate YAML: {e}")))?;
     tokio::fs::write(config_path.join("irrigation_unlimited.yaml"), yaml)
         .await
@@ -211,8 +262,13 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 
     // HA calls are best-effort when env vars are absent (local dev).
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
+        let entity_id = setup
+            .controllers
+            .first()
+            .map(|c| c.ha_master_entity.clone())
+            .unwrap_or_default();
         reload_ha_config(&ha_url, &ha_token).await?;
-        trigger_manual_run(&ha_url, &ha_token).await?;
+        trigger_manual_run(&ha_url, &ha_token, &entity_id).await?;
         tracing::info!("manual run triggered in HA");
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA manual run");
@@ -224,12 +280,22 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 /// Cancel any currently running irrigation sequence on the main controller.
 #[server]
 pub async fn cancel_run() -> Result<(), ServerFnError> {
+    use crate::setup::IuSetup;
+
     tracing::info!("cancel_run requested");
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
-        cancel_ha_run(&ha_url, &ha_token).await?;
+        let entity_id = setup
+            .controllers
+            .first()
+            .map(|c| c.ha_master_entity.clone())
+            .unwrap_or_default();
+        cancel_ha_run(&ha_url, &ha_token, &entity_id).await?;
         tracing::info!("irrigation cancelled in HA");
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — cancel is a no-op");
@@ -269,15 +335,18 @@ async fn reload_ha_config(ha_url: &str, ha_token: &str) -> Result<(), ServerFnEr
 }
 
 #[cfg(feature = "ssr")]
-async fn trigger_manual_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError> {
+async fn trigger_manual_run(
+    ha_url: &str,
+    ha_token: &str,
+    entity_id: &str,
+) -> Result<(), ServerFnError> {
     let url = format!(
         "{}/api/services/irrigation_unlimited/manual_run",
         ha_url.trim_end_matches('/')
     );
 
-    // TODO: Don't hardcode entity IDs
     let body = serde_json::json!({
-        "entity_id": "binary_sensor.irrigation_unlimited_c1_m",
+        "entity_id": entity_id,
         "sequence_id": "manual"
     });
 
@@ -301,15 +370,13 @@ async fn trigger_manual_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFn
 }
 
 #[cfg(feature = "ssr")]
-async fn cancel_ha_run(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError> {
+async fn cancel_ha_run(ha_url: &str, ha_token: &str, entity_id: &str) -> Result<(), ServerFnError> {
     let url = format!(
         "{}/api/services/irrigation_unlimited/cancel",
         ha_url.trim_end_matches('/')
     );
 
-    let body = serde_json::json!({
-        "entity_id": "binary_sensor.irrigation_unlimited_c1_m"
-    });
+    let body = serde_json::json!({ "entity_id": entity_id });
 
     let response = reqwest::Client::new()
         .post(&url)
