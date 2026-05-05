@@ -49,6 +49,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Make config dir writable
+        run: mkdir -p dev/config && chmod a+w dev/config
+
       - name: Start stack
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d

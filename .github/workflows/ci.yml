@@ -91,6 +91,12 @@ jobs:
           cache: npm
           cache-dependency-path: end2end/package-lock.json
 
+      # The runtime image runs as UID 568; the checkout-owned dev/config dir is
+      # owned by the runner (UID 1001), so we make it world-writable before
+      # mounting it into the container.
+      - name: Make config dir writable
+        run: mkdir -p dev/config && chmod a+w dev/config
+
       - name: Start stack
         env:
           IU_IMAGE: iu-configurator:ci
