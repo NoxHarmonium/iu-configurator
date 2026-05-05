@@ -16,20 +16,13 @@ name: iu-dev
 services:
   iu-configurator:
     # Replace the dev build with the pre-published runtime image.
-    image: public.ecr.aws/j0s7z4j0/hopyard/iu-configurator:latest
-    build: !reset null
+    # IU_IMAGE can be overridden to inject a locally built image (e.g. in CI).
+    image: ${IU_IMAGE:-public.ecr.aws/j0s7z4j0/hopyard/iu-configurator:latest}
+    build: !reset "null"
     environment:
       LEPTOS_ENV: PROD
     # Strip the Cargo cache mounts — the binary is already in the image.
     volumes:
       - ./dev/config:/config
     # No hot-reload watcher needed in CI.
-    develop: !reset null
-
-  homeassistant:
-    build:
-      context: dev/ha
-      args:
-        # Allow the weekly workflow to override these for "latest IU" runs.
-        IU_VERSION: "${IU_VERSION}"
-        IU_CARD_VERSION: "${IU_CARD_VERSION}"
+    develop: !reset "null"

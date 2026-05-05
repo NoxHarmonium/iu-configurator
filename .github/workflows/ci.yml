@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,7 +34,8 @@ jobs:
         run: cargo clippy --features ssr --no-default-features -- -D warnings
 
       - name: Clippy (hydrate / wasm)
-        run: cargo clippy --features hydrate --no-default-features --target wasm32-unknown-unknown -- -D warnings
+        run: cargo clippy --features hydrate --no-default-features --target
+          wasm32-unknown-unknown -- -D warnings
 
       - name: Tests (ssr)
         run: cargo test --features ssr --no-default-features
@@ -77,5 +78,57 @@ jobs:
           target: runtime
           platforms: linux/amd64
           push: false
+          load: true
+          tags: iu-configurator:ci
           cache-from: type=gha,scope=ci-docker
           cache-to: type=gha,mode=max,scope=ci-docker
+
+      # ── E2E smoke tests against the locally built image ──────────────────
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: end2end/package-lock.json
+
+      - name: Start stack
+        env:
+          IU_IMAGE: iu-configurator:ci
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+      - name: Wait for iu-configurator
+        run: |
+          curl \
+            --silent \
+            --retry 30 \
+            --retry-delay 10 \
+            --retry-connrefused \
+            --output /dev/null \
+            http://localhost:3000
+
+      - name: Install Node dependencies
+        working-directory: end2end
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: end2end
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke tests
+        working-directory: end2end
+        env:
+          CI: "true"
+          BASE_URL: "http://localhost:3000"
+        run: npm run test:ci
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: end2end/playwright-report/
+          retention-days: 7
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
