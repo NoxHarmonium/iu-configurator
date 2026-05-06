@@ -18,6 +18,7 @@ HA_BASE = "http://homeassistant:8123"
 HA_WS = "ws://homeassistant:8123/api/websocket"
 CLIENT_ID = "http://localhost:8123/"
 TOKEN_FILE = "/config/ha.env"
+IRRIGATION_CONFIG_FILE = "/config/irrigation_unlimited.yaml"
 
 
 def log(msg):
@@ -126,12 +127,31 @@ def create_long_lived_token(access_token):
     ws.run_forever()
 
     if "token" not in result:
-        raise RuntimeError(f"Failed to create long-lived token: {result.get('error', 'unknown')}")
+        raise RuntimeError(
+            f"Failed to create long-lived token: {result.get('error', 'unknown')}"
+        )
 
     return result["token"]
 
 
+def seed_irrigation_config():
+    """Write a minimal irrigation_unlimited.yaml if one does not already exist.
+
+    HA fails to start if the file referenced by `!include iu/irrigation_unlimited.yaml`
+    is missing.  This seed is the smallest valid config IU accepts; iu-configurator
+    overwrites it with real data on the first save.
+    """
+    if os.path.exists(IRRIGATION_CONFIG_FILE):
+        return
+    os.makedirs(os.path.dirname(IRRIGATION_CONFIG_FILE), exist_ok=True)
+    with open(IRRIGATION_CONFIG_FILE, "w") as f:
+        f.write("controllers: []\n")
+    log(f"Seeded empty {IRRIGATION_CONFIG_FILE}")
+
+
 def main():
+    seed_irrigation_config()
+
     if os.path.exists(TOKEN_FILE):
         log(f"{TOKEN_FILE} already exists — skipping bootstrap")
         sys.exit(0)
