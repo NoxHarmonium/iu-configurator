@@ -9,6 +9,7 @@ Exits 0 whether a token was created or skipped (idempotent).
 import json
 import os
 import sys
+import textwrap
 import time
 
 import requests
@@ -155,7 +156,19 @@ def seed_irrigation_config():
         return
     os.makedirs(os.path.dirname(IRRIGATION_CONFIG_FILE), exist_ok=True)
     with open(IRRIGATION_CONFIG_FILE, "w") as f:
-        f.write("controllers: []\n")
+        f.write(
+            textwrap.dedent("""\
+  controllers:
+    - name: 'Controller 1'
+      zones:
+        - schedules:
+          - time: '07:05'
+            duration: '00:03:10'
+            weekday: [mon, tue, wed]
+            month: [jan, feb, mar]
+            day: 'even'
+            """).lstrip()
+        )
     log(f"Seeded empty {IRRIGATION_CONFIG_FILE}")
 
 
