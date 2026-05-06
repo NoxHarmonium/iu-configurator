@@ -89,9 +89,9 @@ services:
       context: dev/ha
       args:
         # https://github.com/rgc99/irrigation_unlimited/releases
-        IU_VERSION: "2025.12.0"
+        IU_VERSION: "${IU_VERSION:-2025.12.0}"
         # https://github.com/rgc99/irrigation-unlimited-card/releases
-        IU_CARD_VERSION: "2026.1.0"
+        IU_CARD_VERSION: "${IU_CARD_VERSION:-2026.1.0}"
     ports:
       - "8123:8123"
     environment:

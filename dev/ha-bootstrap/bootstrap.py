@@ -9,6 +9,7 @@ Exits 0 whether a token was created or skipped (idempotent).
 import json
 import os
 import sys
+import textwrap
 import time
 
 import requests
@@ -18,6 +19,7 @@ HA_BASE = "http://homeassistant:8123"
 HA_WS = "ws://homeassistant:8123/api/websocket"
 CLIENT_ID = "http://localhost:8123/"
 TOKEN_FILE = "/config/ha.env"
+IRRIGATION_CONFIG_FILE = "/config/irrigation_unlimited.yaml"
 
 
 def log(msg):
@@ -87,23 +89,31 @@ def create_long_lived_token(access_token):
             ws.send(json.dumps({"type": "auth", "access_token": access_token}))
 
         elif msg_type == "auth_ok":
-            ws.send(json.dumps({
-                "id": 1,
-                "type": "auth/long_lived_access_token",
-                "client_name": "iu-configurator-dev",
-                "lifespan": 3650,
-            }))
+            ws.send(
+                json.dumps(
+                    {
+                        "id": 1,
+                        "type": "auth/long_lived_access_token",
+                        "client_name": "iu-configurator-dev",
+                        "lifespan": 3650,
+                    }
+                )
+            )
 
         elif msg_type == "result" and data.get("id") == 1:
             if data.get("success"):
                 result["token"] = data["result"]
                 # Register the companion card as a Lovelace module resource.
-                ws.send(json.dumps({
-                    "id": 2,
-                    "type": "lovelace/resources/create",
-                    "res_type": "module",
-                    "url": "/local/irrigation-unlimited-card.js",
-                }))
+                ws.send(
+                    json.dumps(
+                        {
+                            "id": 2,
+                            "type": "lovelace/resources/create",
+                            "res_type": "module",
+                            "url": "/local/irrigation-unlimited-card.js",
+                        }
+                    )
+                )
             else:
                 result["error"] = data.get("error", {}).get("message", "unknown")
                 ws.close()
@@ -112,7 +122,9 @@ def create_long_lived_token(access_token):
             if data.get("success"):
                 log("Lovelace resource registered: /local/irrigation-unlimited-card.js")
             else:
-                log(f"Lovelace resource registration failed (non-fatal): {data.get('error')}")
+                log(
+                    f"Lovelace resource registration failed (non-fatal): {data.get('error')}"
+                )
             ws.close()
 
         elif msg_type == "auth_invalid":
@@ -126,12 +138,43 @@ def create_long_lived_token(access_token):
     ws.run_forever()
 
     if "token" not in result:
-        raise RuntimeError(f"Failed to create long-lived token: {result.get('error', 'unknown')}")
+        raise RuntimeError(
+            f"Failed to create long-lived token: {result.get('error', 'unknown')}"
+        )
 
     return result["token"]
 
 
+def seed_irrigation_config():
+    """Write a minimal irrigation_unlimited.yaml if one does not already exist.
+
+    HA fails to start if the file referenced by `!include iu/irrigation_unlimited.yaml`
+    is missing.  This seed is the smallest valid config IU accepts; iu-configurator
+    overwrites it with real data on the first save.
+    """
+    if os.path.exists(IRRIGATION_CONFIG_FILE):
+        return
+    os.makedirs(os.path.dirname(IRRIGATION_CONFIG_FILE), exist_ok=True)
+    with open(IRRIGATION_CONFIG_FILE, "w") as f:
+        f.write(
+            textwrap.dedent("""\
+  controllers:
+    - name: 'Controller 1'
+      zones:
+        - schedules:
+          - time: '07:05'
+            duration: '00:03:10'
+            weekday: [mon, tue, wed]
+            month: [jan, feb, mar]
+            day: 'even'
+            """).lstrip()
+        )
+    log(f"Seeded empty {IRRIGATION_CONFIG_FILE}")
+
+
 def main():
+    seed_irrigation_config()
+
     if os.path.exists(TOKEN_FILE):
         log(f"{TOKEN_FILE} already exists — skipping bootstrap")
         sys.exit(0)

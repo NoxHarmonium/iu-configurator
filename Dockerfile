@@ -44,13 +44,16 @@ RUN --mount=type=cache,id=iu-configurator-cargo-registry,target=/usr/local/cargo
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM debian:trixie-slim AS runtime
 
+# Non-root user (defaults to 568:568 for the TrueCharts' version of home assistant, override with --build-arg)
+ARG UID=568
+ARG GID=568
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user (568:568 matches TrueCharts' home assistant UID/GID)
-RUN groupadd -g 568 appgroup && useradd -m -u 568 -g 568 appuser
+RUN groupadd -g ${GID} appgroup && useradd -m -u ${UID} -g ${GID} appuser
 
 WORKDIR /app
 
