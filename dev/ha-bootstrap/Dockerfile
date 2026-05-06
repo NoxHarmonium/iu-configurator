@@ -1,7 +1,10 @@
 FROM python:3.14-slim-trixie
 
-# Non-root user (568:568 matches TrueCharts' home assistant UID/GID)
-RUN groupadd -g 568 appgroup && useradd -m -u 568 -g 568 appuser
+# Non-root user (defaults to 568:568 for the TrueCharts' version of home assistant, override with --build-arg)
+ARG UID=568
+ARG GID=568
+
+RUN groupadd -g ${GID} appgroup && useradd -m -u ${UID} -g ${GID} appuser
 
 USER appuser
 
