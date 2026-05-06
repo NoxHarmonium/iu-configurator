@@ -92,8 +92,11 @@ test.describe("Config page smoke test", () => {
     // ── 6. File check: assert generated irrigation_unlimited.yaml ─────────
     // The YAML is written synchronously by the server on save, so by the time
     // the reload above has finished the file is guaranteed to be up to date.
+    console.log(`Loading config from '${YAML_PATH}'...`);
     const raw = fs.readFileSync(YAML_PATH, "utf-8");
     const config = yaml.load(raw) as IuConfig;
+
+    console.log("Config: ", config);
 
     // Top-level structure
     expect(config).toBeTruthy();

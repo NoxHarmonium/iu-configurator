@@ -148,6 +148,14 @@ jobs:
           path: /tmp/stack-logs.txt
           retention-days: 7
 
+      - name: Upload config dir
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-dir
+          path: dev/config
+          retention-days: 7
+
       - name: Tear down stack
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
