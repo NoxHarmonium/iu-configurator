@@ -88,23 +88,31 @@ def create_long_lived_token(access_token):
             ws.send(json.dumps({"type": "auth", "access_token": access_token}))
 
         elif msg_type == "auth_ok":
-            ws.send(json.dumps({
-                "id": 1,
-                "type": "auth/long_lived_access_token",
-                "client_name": "iu-configurator-dev",
-                "lifespan": 3650,
-            }))
+            ws.send(
+                json.dumps(
+                    {
+                        "id": 1,
+                        "type": "auth/long_lived_access_token",
+                        "client_name": "iu-configurator-dev",
+                        "lifespan": 3650,
+                    }
+                )
+            )
 
         elif msg_type == "result" and data.get("id") == 1:
             if data.get("success"):
                 result["token"] = data["result"]
                 # Register the companion card as a Lovelace module resource.
-                ws.send(json.dumps({
-                    "id": 2,
-                    "type": "lovelace/resources/create",
-                    "res_type": "module",
-                    "url": "/local/irrigation-unlimited-card.js",
-                }))
+                ws.send(
+                    json.dumps(
+                        {
+                            "id": 2,
+                            "type": "lovelace/resources/create",
+                            "res_type": "module",
+                            "url": "/local/irrigation-unlimited-card.js",
+                        }
+                    )
+                )
             else:
                 result["error"] = data.get("error", {}).get("message", "unknown")
                 ws.close()
@@ -113,7 +121,9 @@ def create_long_lived_token(access_token):
             if data.get("success"):
                 log("Lovelace resource registered: /local/irrigation-unlimited-card.js")
             else:
-                log(f"Lovelace resource registration failed (non-fatal): {data.get('error')}")
+                log(
+                    f"Lovelace resource registration failed (non-fatal): {data.get('error')}"
+                )
             ws.close()
 
         elif msg_type == "auth_invalid":
