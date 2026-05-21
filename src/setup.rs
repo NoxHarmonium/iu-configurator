@@ -24,6 +24,12 @@ pub struct ZoneSetup {
     pub name: String,
     /// Home Assistant switch / input_boolean entity to control.
     pub entity_id: String,
+    /// Optional concurrency group. Sequences whose zones all share the same
+    /// non-empty `zone_group` value are allowed to start at the same time.
+    /// Sequences with no `zone_group` (or mixed groups) are serialised —
+    /// each runs after the previous one finishes.
+    #[serde(default)]
+    pub zone_group: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

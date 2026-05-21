@@ -6,6 +6,14 @@ Built with [Leptos](https://github.com/leptos-rs/leptos) + [Axum](https://github
 
 ---
 
+## How it works
+
+1. **Hardware description** — you describe your physical setup once in `iu-setup.yaml` (controllers, zones, entity IDs). This file lives in `CONFIG_DIR` and is read on startup.
+2. **Schedule editing** — use the web UI to set watering days, durations, and enable/disable per zone. The schedule is persisted to `iu-schedule.json` in `CONFIG_DIR`.
+3. **YAML generation** — whenever you save the schedule the app generates `irrigation_unlimited.yaml` in `CONFIG_DIR` and sends a reload request to Home Assistant so the new config is picked up immediately.
+
+---
+
 ## Prerequisites
 
 - Rust stable + `wasm32-unknown-unknown` target
@@ -97,6 +105,105 @@ docker run -p 3000:3000 \
 ```
 
 The `dev/config` volume is where `iu-schedule.json` and `irrigation_unlimited.yaml` are written. Mount it to your actual HA config directory so the generated YAML is picked up directly.
+
+---
+
+## `iu-setup.yaml` Reference
+
+This file describes your physical irrigation hardware. It is **not** managed by the UI — edit it once when you set up the system.
+
+### Top-level fields
+
+| Field              | Type    | Description                                                                     |
+| ------------------ | ------- | ------------------------------------------------------------------------------- |
+| `poll_interval_ms` | integer | How often (ms) the app polls the HA state to update the run-indicator in the UI |
+
+### `controllers[]`
+
+One entry per irrigation controller (typically one per `irrigation_unlimited` controller entity).
+
+| Field              | Type    | Description                                                                           |
+| ------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `id`               | string  | Stable identifier (snake_case). Used as the base for generated sequence IDs           |
+| `name`             | string  | Human-readable name shown in the generated YAML                                       |
+| `preamble_secs`    | integer | Seconds added before the first zone in every sequence (master-valve open delay)       |
+| `postamble_secs`   | integer | Seconds added after the last zone in every sequence (drain / master-valve close time) |
+| `delay_secs`       | integer | Inter-zone delay inserted between consecutive zones within a sequence                 |
+| `ha_master_entity` | string  | HA entity ID of the master valve / binary sensor for this controller                  |
+
+### `zones[]`
+
+One entry per physical zone.
+
+| Field           | Type             | Description                                                                                                                                                                                                                                                                                                                         |
+| --------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | string           | Stable identifier (snake_case). Must match the key used in `iu-schedule.json`                                                                                                                                                                                                                                                       |
+| `controller_id` | string           | Must match the `id` of a controller in `controllers[]`                                                                                                                                                                                                                                                                              |
+| `name`          | string           | Human-readable zone name shown in the UI and generated YAML                                                                                                                                                                                                                                                                         |
+| `entity_id`     | string           | HA switch entity that opens/closes this zone's valve                                                                                                                                                                                                                                                                                |
+| `zone_group`    | string, optional | Concurrency group. Sequences whose zones all belong to the **same** group are allowed to start at the same time (useful for separate controllers that share water pressure independently). Zones with no `zone_group`, or whose zones span multiple groups, are serialised — each sequence starts after the previous one completes. |
+
+### `defaults`
+
+Default values used to seed a blank schedule when no `iu-schedule.json` exists.
+
+| Field                    | Type    | Description                                            |
+| ------------------------ | ------- | ------------------------------------------------------ |
+| `morning_time`           | string  | Default morning start time, e.g. `"06:00"`             |
+| `afternoon_time`         | string  | Default afternoon start time, e.g. `"16:00"`           |
+| `zone_morning_secs`      | integer | Default morning watering duration per zone (seconds)   |
+| `zone_afternoon_secs`    | integer | Default afternoon watering duration per zone (seconds) |
+| `zone_morning_enabled`   | boolean | Whether morning sessions are enabled by default        |
+| `zone_afternoon_enabled` | boolean | Whether afternoon sessions are enabled by default      |
+
+### Annotated example
+
+```yaml
+poll_interval_ms: 5000
+
+controllers:
+  - id: main
+    name: Main Garden
+    preamble_secs: 5 # 5 s for master valve to open before first zone
+    postamble_secs: 5 # 5 s to drain after last zone closes
+    delay_secs: 3 # 3 s gap between consecutive zones
+    ha_master_entity: binary_sensor.irrigation_unlimited_c1_m
+
+zones:
+  # Drip zones that share water pressure — can run at the same time as each other
+  - id: pots_front
+    controller_id: main
+    name: Front Pots
+    entity_id: switch.irrigation_zone_pots_front
+    zone_group: drip # <-- same group name means concurrent start is allowed
+
+  - id: pots_back
+    controller_id: main
+    name: Back Pots
+    entity_id: switch.irrigation_zone_pots_back
+    zone_group: drip
+
+  # Lawn sprinklers — no zone_group, so they are serialised after drip zones finish
+  - id: lawn_front
+    controller_id: main
+    name: Front Lawn
+    entity_id: switch.irrigation_zone_lawn_front
+
+  - id: lawn_back
+    controller_id: main
+    name: Back Lawn
+    entity_id: switch.irrigation_zone_lawn_back
+
+defaults:
+  morning_time: "06:00"
+  afternoon_time: "16:00"
+  zone_morning_secs: 600 # 10 min
+  zone_afternoon_secs: 300 # 5 min
+  zone_morning_enabled: true
+  zone_afternoon_enabled: false
+```
+
+In this example, if `pots_front` waters Mon/Wed/Fri and `pots_back` waters Tue/Thu, they form two sequences that both start at the configured morning time. The two lawn sequences start only after all drip sequences finish.
 
 ---
 

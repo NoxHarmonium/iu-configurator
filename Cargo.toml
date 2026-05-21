@@ -1,6 +1,6 @@
 [package]
 name = "iu-configurator"
-version = "1.5.0"
+version = "1.5.1"
 edition = "2024"
 
 [lib]
@@ -21,7 +21,9 @@ serde_yaml = { version = "0.9", optional = true }
 anyhow = { version = "1", optional = true }
 reqwest = { version = "0.13", features = ["json"], optional = true }
 tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+], optional = true }
 tower-http = { version = "0.6", features = ["trace"], optional = true }
 envy = { version = "0.4", optional = true }
 chrono = { version = "0.4", optional = true }
@@ -29,14 +31,12 @@ leptos-use = "0.18.3"
 dotenvy = "0.15.7"
 
 [dev-dependencies]
-cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
+cargo-husky = { version = "1", default-features = false, features = [
+    "user-hooks",
+] }
 
 [features]
-hydrate = [
-    "leptos/hydrate",
-    "dep:console_error_panic_hook",
-    "dep:wasm-bindgen",
-]
+hydrate = ["leptos/hydrate", "dep:console_error_panic_hook", "dep:wasm-bindgen"]
 ssr = [
     "dep:axum",
     "dep:tokio",
