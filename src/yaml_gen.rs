@@ -5,6 +5,11 @@ use serde::Serialize;
 use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
 use crate::setup::IuSetup;
 
+/// `(sorted_active_days, zones_in_group)` where each zone is `(zone_id, duration_secs)`.
+/// Used internally by `build_weekday_sequences` to accumulate day-pattern groups
+/// before assigning start times.
+type DayGroup = (Vec<String>, Vec<(String, u32)>);
+
 // ---------------------------------------------------------------------------
 // Structures that mirror the irrigation_unlimited YAML schema.
 // These are only used for serialisation — they never leave the server.
@@ -193,6 +198,8 @@ fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> 
                     &schedule.morning_time,
                     "morning",
                     ctrl.delay_secs,
+                    ctrl.preamble_secs,
+                    ctrl.postamble_secs,
                     |zs| zs.morning_enabled,
                     |zs| zs.morning_secs,
                 ));
@@ -204,6 +211,8 @@ fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> 
                     &schedule.afternoon_time,
                     "afternoon",
                     ctrl.delay_secs,
+                    ctrl.preamble_secs,
+                    ctrl.postamble_secs,
                     |zs| zs.afternoon_enabled,
                     |zs| zs.afternoon_secs,
                 ));
@@ -236,6 +245,12 @@ fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> 
 /// Group zones for a single controller session by their active-day pattern and
 /// emit one `IuSequence` per unique pattern.  Zones without any active days,
 /// or that are disabled / have zero duration for this session, are skipped.
+///
+/// Sequences are assigned start times so that sequences that would share the
+/// same wall-clock time do not compete for water.  Two sequences may share a
+/// start time only if every zone in both belongs to the same non-empty
+/// `zone_group`.  All other sequences are serialised: each slot starts after
+/// the previous one's longest sequence has finished.
 /// TODO: Address this clippy issue
 #[allow(clippy::too_many_arguments)]
 fn build_weekday_sequences<F, G>(
@@ -246,6 +261,8 @@ fn build_weekday_sequences<F, G>(
     session_time: &str,
     session: &str,
     delay_secs: u32,
+    preamble_secs: u32,
+    postamble_secs: u32,
     is_enabled: F,
     get_secs: G,
 ) -> Vec<IuSequence>
@@ -255,8 +272,9 @@ where
 {
     const DAY_ORDER: &[&str] = &["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-    // Build groups: (sorted-day-set, zones-in-that-group).
-    let mut groups: Vec<(Vec<String>, Vec<IuSeqZone>)> = Vec::new();
+    // Build groups: (sorted-day-set, zones-in-that-group) storing raw secs so
+    // we can compute slot durations without re-parsing formatted strings.
+    let mut groups: Vec<DayGroup> = Vec::new();
 
     for zone in setup
         .zones
@@ -277,43 +295,123 @@ where
             _ => continue,
         };
 
-        let seq_zone = IuSeqZone {
-            zone_id: zone.id.clone(),
-            duration: format_duration(secs),
-        };
-
         if let Some(group) = groups.iter_mut().find(|(d, _)| *d == days) {
-            group.1.push(seq_zone);
+            group.1.push((zone.id.clone(), secs));
         } else {
-            groups.push((days, vec![seq_zone]));
+            groups.push((days, vec![(zone.id.clone(), secs)]));
         }
     }
 
+    if groups.is_empty() {
+        return Vec::new();
+    }
+
+    // Determine the concurrent key for each group.  A group's key is the
+    // shared `zone_group` of all its zones, or `None` when zones have no group
+    // or belong to different groups.  Only groups with the same non-None key
+    // are allowed to start at the same time.
+    let concurrent_keys: Vec<Option<String>> = groups
+        .iter()
+        .map(|(_, zone_list)| {
+            let first_group = setup
+                .zones
+                .iter()
+                .find(|z| z.id == zone_list[0].0)
+                .and_then(|z| z.zone_group.clone());
+            let first_group = match first_group {
+                Some(g) => g,
+                None => return None,
+            };
+            for (zone_id, _) in &zone_list[1..] {
+                let zg = setup
+                    .zones
+                    .iter()
+                    .find(|z| &z.id == zone_id)
+                    .and_then(|z| z.zone_group.as_deref());
+                if zg != Some(&first_group) {
+                    return None;
+                }
+            }
+            Some(first_group)
+        })
+        .collect();
+
+    // Build run slots.  Groups sharing the same non-None concurrent key form
+    // one slot (same start time).  Groups with no key each get their own
+    // singleton slot and run after the previous slot finishes.
+    let mut slots: Vec<Vec<usize>> = Vec::new();
+    let mut assigned = vec![false; groups.len()];
+    for (i, key_i) in concurrent_keys.iter().enumerate() {
+        if assigned[i] {
+            continue;
+        }
+        assigned[i] = true;
+        let mut slot = vec![i];
+        if let Some(g) = key_i {
+            for (j, key_j) in concurrent_keys.iter().enumerate().skip(i + 1) {
+                if key_j.as_deref() == Some(g.as_str()) && !assigned[j] {
+                    assigned[j] = true;
+                    slot.push(j);
+                }
+            }
+        }
+        slots.push(slot);
+    }
+
+    // Emit sequences, computing cumulative start times across slots.
+    // Within a slot all sequences get the same start time; the slot advances
+    // by the longest sequence duration in that slot.
     let total = groups.len();
-    groups
-        .into_iter()
-        .enumerate()
-        .map(|(i, (days, seq_zones))| {
+    let mut current_secs = parse_hhmm_to_secs(session_time);
+    let mut result: Vec<IuSequence> = Vec::new();
+    let mut seq_num: usize = 0;
+
+    for slot in &slots {
+        let slot_start = format_secs_to_hhmm(current_secs);
+
+        let slot_duration = slot
+            .iter()
+            .map(|&gi| {
+                let zone_secs: u32 = groups[gi].1.iter().map(|(_, s)| s).sum();
+                let n = groups[gi].1.len() as u32;
+                preamble_secs + zone_secs + delay_secs * n.saturating_sub(1) + postamble_secs
+            })
+            .max()
+            .unwrap_or(0);
+
+        for &gi in slot {
+            seq_num += 1;
+            let (days, zone_list) = &groups[gi];
             let seq_id = if total == 1 {
                 format!("{}_{}", controller_id, session)
             } else {
-                format!("{}_{}_{}", controller_id, session, i + 1)
+                format!("{}_{}_{}", controller_id, session, seq_num)
             };
-            let name = format!("{} ({})", capitalize_first(session), days_label(&days));
-            IuSequence {
-                name,
+            let seq_zones: Vec<IuSeqZone> = zone_list
+                .iter()
+                .map(|(zone_id, secs)| IuSeqZone {
+                    zone_id: zone_id.clone(),
+                    duration: format_duration(*secs),
+                })
+                .collect();
+            result.push(IuSequence {
+                name: format!("{} ({})", capitalize_first(session), days_label(days)),
                 sequence_id: seq_id,
                 delay: format_duration(delay_secs),
                 schedules: vec![IuSchedule {
                     name: capitalize_first(session),
-                    time: session_time.to_string(),
-                    weekday: weekday_filter(&days),
+                    time: slot_start.clone(),
+                    weekday: weekday_filter(days),
                     day: None,
                 }],
                 zones: seq_zones,
-            }
-        })
-        .collect()
+            });
+        }
+
+        current_secs += slot_duration;
+    }
+
+    result
 }
 
 /// Returns a human-readable label for a set of active days.
@@ -398,6 +496,22 @@ fn build_manual_seq_zones(
             })
         })
         .collect()
+}
+
+/// Parse `"HH:MM"` into a total number of seconds.
+fn parse_hhmm_to_secs(hhmm: &str) -> u32 {
+    let mut parts = hhmm.splitn(2, ':');
+    let h: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let m: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    h * 3600 + m * 60
+}
+
+/// Format a total number of seconds as `"HH:MM"`, wrapping at midnight.
+fn format_secs_to_hhmm(secs: u32) -> String {
+    let secs = secs % 86400;
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    format!("{h:02}:{m:02}")
 }
 
 /// Returns `None` (omitting the YAML field) when all seven days are selected,
@@ -604,6 +718,210 @@ mod tests {
             !yaml.contains("manual"),
             "manual sequence should not appear when no zones selected"
         );
+    }
+
+    // ---------------------------------------------------------------------------
+    // zone_group / slot-scheduling tests
+    // ---------------------------------------------------------------------------
+
+    /// Build a minimal IuSetup from a YAML string — useful for zone_group tests.
+    fn setup_from_yaml(yaml: &str) -> IuSetup {
+        serde_yaml::from_str(yaml).expect("test setup YAML failed to parse")
+    }
+
+    /// Minimal controller block shared across zone_group tests.
+    /// Afternoon is disabled so the tests only need to reason about morning schedules.
+    const CTRL_YAML: &str = r"
+poll_interval_ms: 1000
+controllers:
+  - id: main
+    name: Test Controller
+    preamble_secs: 10
+    postamble_secs: 10
+    delay_secs: 5
+    ha_master_entity: binary_sensor.irrigation_unlimited_c1_m
+defaults:
+  morning_time: '08:00'
+  afternoon_time: '15:00'
+  zone_morning_secs: 600
+  zone_afternoon_secs: 600
+  zone_morning_enabled: true
+  zone_afternoon_enabled: false
+";
+
+    #[test]
+    fn test_no_zone_group_serialises_sequences() {
+        // Two zones with different active days and no zone_group → two singleton
+        // slots → second sequence's start time must be offset from the first.
+        let setup = setup_from_yaml(&format!(
+            "{CTRL_YAML}
+zones:
+  - id: zone_a
+    controller_id: main
+    name: Zone A
+    entity_id: switch.a
+  - id: zone_b
+    controller_id: main
+    name: Zone B
+    entity_id: switch.b
+"
+        ));
+
+        let mut schedule = Schedule::default_seed_from(&setup);
+        // zone_a runs Mon, zone_b runs Tue → two separate day-pattern groups.
+        schedule
+            .zone_active_days
+            .insert("zone_a".into(), vec!["mon".into()]);
+        schedule
+            .zone_active_days
+            .insert("zone_b".into(), vec!["tue".into()]);
+
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
+
+        // Both sequences must exist but with different start times.
+        assert!(yaml.contains("main_morning_1"), "missing first sequence");
+        assert!(yaml.contains("main_morning_2"), "missing second sequence");
+        // The first slot starts at 08:00; the second must NOT also be 08:00.
+        let times: Vec<&str> = yaml
+            .lines()
+            .filter(|l| l.trim().starts_with("time:"))
+            .collect();
+        let morning_times: Vec<&str> = times.iter().filter(|l| l.contains(':')).copied().collect();
+        // There should be two distinct morning schedule times.
+        assert!(
+            morning_times.len() >= 2,
+            "expected at least two schedule time entries"
+        );
+        let unique_times: std::collections::HashSet<&str> = morning_times.iter().copied().collect();
+        assert!(
+            unique_times.len() >= 2,
+            "sequences without zone_group should have different start times, got: {morning_times:?}"
+        );
+    }
+
+    #[test]
+    fn test_same_zone_group_allows_concurrent_start() {
+        // Two zones with the same zone_group and different active days → one
+        // slot → both sequences start at the session time.
+        let setup = setup_from_yaml(&format!(
+            "{CTRL_YAML}
+zones:
+  - id: zone_a
+    controller_id: main
+    name: Zone A
+    entity_id: switch.a
+    zone_group: pots
+  - id: zone_b
+    controller_id: main
+    name: Zone B
+    entity_id: switch.b
+    zone_group: pots
+"
+        ));
+
+        let mut schedule = Schedule::default_seed_from(&setup);
+        schedule
+            .zone_active_days
+            .insert("zone_a".into(), vec!["mon".into()]);
+        schedule
+            .zone_active_days
+            .insert("zone_b".into(), vec!["tue".into()]);
+
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
+
+        // Both sequences must exist.
+        assert!(yaml.contains("main_morning_1"), "missing first sequence");
+        assert!(yaml.contains("main_morning_2"), "missing second sequence");
+        // All morning schedule times should be identical (both start at 08:00).
+        let morning_times: Vec<&str> = yaml
+            .lines()
+            .filter(|l| l.trim().starts_with("time:"))
+            .collect();
+        let unique_times: std::collections::HashSet<&str> = morning_times.iter().copied().collect();
+        assert_eq!(
+            unique_times.len(),
+            1,
+            "sequences in the same zone_group should share a start time, got: {morning_times:?}"
+        );
+    }
+
+    #[test]
+    fn test_mixed_zone_groups_serialises_correctly() {
+        // Three zones: zone_a and zone_b share zone_group "pots"; zone_c has none.
+        // Expected: zone_a and zone_b form one concurrent slot (start at 08:00),
+        // zone_c forms a second slot (starts after the first slot completes).
+        let setup = setup_from_yaml(&format!(
+            "{CTRL_YAML}
+zones:
+  - id: zone_a
+    controller_id: main
+    name: Zone A
+    entity_id: switch.a
+    zone_group: pots
+  - id: zone_b
+    controller_id: main
+    name: Zone B
+    entity_id: switch.b
+    zone_group: pots
+  - id: zone_c
+    controller_id: main
+    name: Zone C
+    entity_id: switch.c
+"
+        ));
+
+        let mut schedule = Schedule::default_seed_from(&setup);
+        schedule
+            .zone_active_days
+            .insert("zone_a".into(), vec!["mon".into()]);
+        schedule
+            .zone_active_days
+            .insert("zone_b".into(), vec!["tue".into()]);
+        schedule
+            .zone_active_days
+            .insert("zone_c".into(), vec!["wed".into()]);
+
+        let yaml = generate_yaml(&schedule, &setup).unwrap();
+
+        // All three sequences must be present.
+        assert!(yaml.contains("main_morning_1"), "missing sequence 1");
+        assert!(yaml.contains("main_morning_2"), "missing sequence 2");
+        assert!(yaml.contains("main_morning_3"), "missing sequence 3");
+
+        // Extract schedule time values from the YAML.
+        let times: Vec<&str> = yaml
+            .lines()
+            .filter(|l| l.trim().starts_with("time:"))
+            .map(|l| l.trim())
+            .collect();
+        assert_eq!(
+            times.len(),
+            3,
+            "expected 3 schedule entries, got: {times:?}"
+        );
+
+        // The first two must share the same time (both in the "pots" slot).
+        assert_eq!(
+            times[0], times[1],
+            "zone_a and zone_b should share a start time"
+        );
+        // The third must differ (zone_c is serialised after the first slot).
+        assert_ne!(
+            times[0], times[2],
+            "zone_c should have a later start time than the 'pots' slot"
+        );
+    }
+
+    #[test]
+    fn test_parse_and_format_hhmm_helpers() {
+        assert_eq!(parse_hhmm_to_secs("08:00"), 28800);
+        assert_eq!(parse_hhmm_to_secs("00:00"), 0);
+        assert_eq!(parse_hhmm_to_secs("23:59"), 86340);
+        assert_eq!(format_secs_to_hhmm(28800), "08:00");
+        assert_eq!(format_secs_to_hhmm(0), "00:00");
+        // Wraps at midnight.
+        assert_eq!(format_secs_to_hhmm(86400), "00:00");
+        assert_eq!(format_secs_to_hhmm(86460), "00:01");
     }
 
     #[test]
