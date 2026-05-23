@@ -1,6 +1,14 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("startup failed: {e}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(feature = "ssr")]
+async fn run() -> Result<(), String> {
     use std::env;
 
     use axum::{Extension, Router, routing::get};
@@ -11,7 +19,8 @@ async fn main() {
     use tracing::Level;
 
     if let Ok(env_file) = env::var("ENV_FILE") {
-        dotenvy::from_filename(env_file).unwrap();
+        dotenvy::from_filename(&env_file)
+            .map_err(|e| format!("Failed to load ENV_FILE {env_file}: {e}"))?;
     }
 
     tracing_subscriber::fmt()
@@ -19,14 +28,23 @@ async fn main() {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "iu_configurator=info,tower_http=info".into()),
         )
-        .init();
+        .try_init()
+        .map_err(|e| format!("Failed to initialize tracing subscriber: {e}"))?;
 
-    let config = envy::from_env::<Config>().expect("invalid configuration");
-    let setup = IuSetup::load(&config.config_dir)
-        .await
-        .expect("Failed to load iu-setup.yaml — place this file in CONFIG_DIR (default: /config)");
+    let config = envy::from_env::<Config>().map_err(|e| format!("Invalid configuration: {e}"))?;
+    config
+        .validate()
+        .map_err(|e| format!("Invalid configuration: {e}"))?;
 
-    let conf = get_configuration(None).unwrap();
+    let setup = IuSetup::load(&config.config_dir).await.map_err(|e| {
+        format!(
+            "Failed to load iu-setup.yaml from CONFIG_DIR ({}): {e}",
+            config.config_dir
+        )
+    })?;
+
+    let conf =
+        get_configuration(None).map_err(|e| format!("Failed to load Leptos configuration: {e}"))?;
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
 
@@ -71,10 +89,15 @@ async fn main() {
         .layer(Extension(setup));
 
     tracing::info!("listening on http://{}", &addr);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind server listener on {addr}: {e}"))?;
+
     axum::serve(listener, app.into_make_service())
         .await
-        .unwrap();
+        .map_err(|e| format!("Server exited with error: {e}"))?;
+
+    Ok(())
 }
 
 #[cfg(not(feature = "ssr"))]

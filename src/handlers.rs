@@ -38,14 +38,38 @@ pub async fn health(
     // ── Check 2: Home Assistant reachable (only when token is set) ────────
     if let (Some(ha_url), Some(ha_token)) = (&config.ha_url, &config.ha_token) {
         let url = format!("{}/api/", ha_url.trim_end_matches('/'));
-        let result = reqwest::Client::builder()
+        let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
-            .unwrap()
-            .get(&url)
-            .header("Authorization", format!("Bearer {ha_token}"))
-            .send()
-            .await;
+            .map_err(|e| e.to_string());
+
+        let result = match client {
+            Ok(c) => {
+                c.get(&url)
+                    .header("Authorization", format!("Bearer {ha_token}"))
+                    .send()
+                    .await
+            }
+            Err(e) => {
+                ok = false;
+                checks.push(json!({
+                    "name": "home_assistant",
+                    "status": "error",
+                    "detail": format!("failed to build HTTP client: {e}")
+                }));
+                let status = if ok {
+                    StatusCode::OK
+                } else {
+                    StatusCode::SERVICE_UNAVAILABLE
+                };
+                return (
+                    status,
+                    axum::Json(
+                        json!({ "status": if ok { "ok" } else { "degraded" }, "checks": checks }),
+                    ),
+                );
+            }
+        };
 
         match result {
             Ok(r) if r.status().is_success() => {
