@@ -9,7 +9,22 @@ use super::time::{
     weekday_filter,
 };
 
-type DayGroup = (Vec<String>, Vec<(String, u32)>);
+struct DayGroup {
+    days: Vec<String>,
+    zone_durations: Vec<(String, u32)>,
+}
+
+struct WeekdayBuildCtx<'a> {
+    setup: &'a IuSetup,
+    controller_id: &'a str,
+    zone_schedules: &'a HashMap<String, ZoneSchedule>,
+    zone_active_days: &'a HashMap<String, Vec<String>>,
+    session_time: &'a str,
+    session: &'a str,
+    delay_secs: u32,
+    preamble_secs: u32,
+    postamble_secs: u32,
+}
 
 pub(super) fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> {
     setup
@@ -86,29 +101,36 @@ pub(super) fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuC
                     }
                 }
             } else {
-                sequences.extend(build_weekday_sequences(
+                let morning_ctx = WeekdayBuildCtx {
                     setup,
-                    ctrl.id.as_str(),
-                    &schedule.zones,
-                    &schedule.zone_active_days,
-                    &schedule.morning_time,
-                    "morning",
-                    ctrl.delay_secs,
-                    ctrl.preamble_secs,
-                    ctrl.postamble_secs,
+                    controller_id: ctrl.id.as_str(),
+                    zone_schedules: &schedule.zones,
+                    zone_active_days: &schedule.zone_active_days,
+                    session_time: &schedule.morning_time,
+                    session: "morning",
+                    delay_secs: ctrl.delay_secs,
+                    preamble_secs: ctrl.preamble_secs,
+                    postamble_secs: ctrl.postamble_secs,
+                };
+                sequences.extend(build_weekday_sequences(
+                    &morning_ctx,
                     |zs| zs.morning_enabled,
                     |zs| zs.morning_secs,
                 ));
-                sequences.extend(build_weekday_sequences(
+
+                let afternoon_ctx = WeekdayBuildCtx {
                     setup,
-                    ctrl.id.as_str(),
-                    &schedule.zones,
-                    &schedule.zone_active_days,
-                    &schedule.afternoon_time,
-                    "afternoon",
-                    ctrl.delay_secs,
-                    ctrl.preamble_secs,
-                    ctrl.postamble_secs,
+                    controller_id: ctrl.id.as_str(),
+                    zone_schedules: &schedule.zones,
+                    zone_active_days: &schedule.zone_active_days,
+                    session_time: &schedule.afternoon_time,
+                    session: "afternoon",
+                    delay_secs: ctrl.delay_secs,
+                    preamble_secs: ctrl.preamble_secs,
+                    postamble_secs: ctrl.postamble_secs,
+                };
+                sequences.extend(build_weekday_sequences(
+                    &afternoon_ctx,
                     |zs| zs.afternoon_enabled,
                     |zs| zs.afternoon_secs,
                 ));
@@ -137,17 +159,8 @@ pub(super) fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuC
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_weekday_sequences<F, G>(
-    setup: &IuSetup,
-    controller_id: &str,
-    zone_schedules: &HashMap<String, ZoneSchedule>,
-    zone_active_days: &HashMap<String, Vec<String>>,
-    session_time: &str,
-    session: &str,
-    delay_secs: u32,
-    preamble_secs: u32,
-    postamble_secs: u32,
+    ctx: &WeekdayBuildCtx<'_>,
     is_enabled: F,
     get_secs: G,
 ) -> Vec<IuSequence>
@@ -155,87 +168,17 @@ where
     F: Fn(&ZoneSchedule) -> bool,
     G: Fn(&ZoneSchedule) -> u32,
 {
-    const DAY_ORDER: &[&str] = &["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-
-    let mut groups: Vec<DayGroup> = Vec::new();
-
-    for zone in setup
-        .zones
-        .iter()
-        .filter(|z| z.controller_id == controller_id)
-    {
-        let days = match zone_active_days.get(zone.id.as_str()) {
-            Some(d) if !d.is_empty() => {
-                let mut sorted = d.clone();
-                sorted.sort_by_key(|d| DAY_ORDER.iter().position(|&o| o == d).unwrap_or(7));
-                sorted
-            }
-            _ => continue,
-        };
-
-        let secs = match zone_schedules.get(zone.id.as_str()) {
-            Some(zs) if is_enabled(zs) && get_secs(zs) > 0 => get_secs(zs),
-            _ => continue,
-        };
-
-        if let Some(group) = groups.iter_mut().find(|(d, _)| *d == days) {
-            group.1.push((zone.id.clone(), secs));
-        } else {
-            groups.push((days, vec![(zone.id.clone(), secs)]));
-        }
-    }
+    let groups = build_day_groups(ctx, &is_enabled, &get_secs);
 
     if groups.is_empty() {
         return Vec::new();
     }
 
-    let concurrent_keys: Vec<Option<String>> = groups
-        .iter()
-        .map(|(_, zone_list)| {
-            let first_group = setup
-                .zones
-                .iter()
-                .find(|z| z.id == zone_list[0].0)
-                .and_then(|z| z.zone_group.clone());
-            let first_group = match first_group {
-                Some(g) => g,
-                None => return None,
-            };
-            for (zone_id, _) in &zone_list[1..] {
-                let zg = setup
-                    .zones
-                    .iter()
-                    .find(|z| &z.id == zone_id)
-                    .and_then(|z| z.zone_group.as_deref());
-                if zg != Some(&first_group) {
-                    return None;
-                }
-            }
-            Some(first_group)
-        })
-        .collect();
-
-    let mut slots: Vec<Vec<usize>> = Vec::new();
-    let mut assigned = vec![false; groups.len()];
-    for (i, key_i) in concurrent_keys.iter().enumerate() {
-        if assigned[i] {
-            continue;
-        }
-        assigned[i] = true;
-        let mut slot = vec![i];
-        if let Some(g) = key_i {
-            for (j, key_j) in concurrent_keys.iter().enumerate().skip(i + 1) {
-                if key_j.as_deref() == Some(g.as_str()) && !assigned[j] {
-                    assigned[j] = true;
-                    slot.push(j);
-                }
-            }
-        }
-        slots.push(slot);
-    }
+    let concurrent_keys = build_concurrent_keys(ctx.setup, &groups);
+    let slots = build_slots(&concurrent_keys);
 
     let total = groups.len();
-    let mut current_secs = parse_hhmm_to_secs(session_time);
+    let mut current_secs = parse_hhmm_to_secs(ctx.session_time);
     let mut result: Vec<IuSequence> = Vec::new();
     let mut seq_num: usize = 0;
 
@@ -244,23 +187,20 @@ where
 
         let slot_duration = slot
             .iter()
-            .map(|&gi| {
-                let zone_secs: u32 = groups[gi].1.iter().map(|(_, s)| s).sum();
-                let n = groups[gi].1.len() as u32;
-                preamble_secs + zone_secs + delay_secs * n.saturating_sub(1) + postamble_secs
-            })
+            .map(|&gi| group_runtime_secs(&groups[gi], ctx))
             .max()
             .unwrap_or(0);
 
         for &gi in slot {
             seq_num += 1;
-            let (days, zone_list) = &groups[gi];
+            let group = &groups[gi];
             let seq_id = if total == 1 {
-                format!("{}_{}", controller_id, session)
+                format!("{}_{}", ctx.controller_id, ctx.session)
             } else {
-                format!("{}_{}_{}", controller_id, session, seq_num)
+                format!("{}_{}_{}", ctx.controller_id, ctx.session, seq_num)
             };
-            let seq_zones: Vec<IuSeqZone> = zone_list
+            let seq_zones: Vec<IuSeqZone> = group
+                .zone_durations
                 .iter()
                 .map(|(zone_id, secs)| IuSeqZone {
                     zone_id: zone_id.clone(),
@@ -268,13 +208,17 @@ where
                 })
                 .collect();
             result.push(IuSequence {
-                name: format!("{} ({})", capitalize_first(session), days_label(days)),
+                name: format!(
+                    "{} ({})",
+                    capitalize_first(ctx.session),
+                    days_label(&group.days)
+                ),
                 sequence_id: seq_id,
-                delay: format_duration(delay_secs),
+                delay: format_duration(ctx.delay_secs),
                 schedules: vec![IuSchedule {
-                    name: capitalize_first(session),
+                    name: capitalize_first(ctx.session),
                     time: slot_start.clone(),
-                    weekday: weekday_filter(days),
+                    weekday: weekday_filter(&group.days),
                     day: None,
                 }],
                 zones: seq_zones,
@@ -285,6 +229,118 @@ where
     }
 
     result
+}
+
+fn build_day_groups<F, G>(ctx: &WeekdayBuildCtx<'_>, is_enabled: &F, get_secs: &G) -> Vec<DayGroup>
+where
+    F: Fn(&ZoneSchedule) -> bool,
+    G: Fn(&ZoneSchedule) -> u32,
+{
+    let mut groups: Vec<DayGroup> = Vec::new();
+
+    for zone in ctx
+        .setup
+        .zones
+        .iter()
+        .filter(|z| z.controller_id == ctx.controller_id)
+    {
+        let days = match sorted_days(ctx.zone_active_days.get(zone.id.as_str())) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let secs = match ctx.zone_schedules.get(zone.id.as_str()) {
+            Some(zs) if is_enabled(zs) && get_secs(zs) > 0 => get_secs(zs),
+            _ => continue,
+        };
+
+        if let Some(group) = groups.iter_mut().find(|g| g.days == days) {
+            group.zone_durations.push((zone.id.clone(), secs));
+        } else {
+            groups.push(DayGroup {
+                days,
+                zone_durations: vec![(zone.id.clone(), secs)],
+            });
+        }
+    }
+
+    groups
+}
+
+fn sorted_days(days: Option<&Vec<String>>) -> Option<Vec<String>> {
+    const DAY_ORDER: &[&str] = &["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+    match days {
+        Some(d) if !d.is_empty() => {
+            let mut sorted = d.clone();
+            sorted.sort_by_key(|d| DAY_ORDER.iter().position(|&o| o == d).unwrap_or(7));
+            Some(sorted)
+        }
+        _ => None,
+    }
+}
+
+fn build_concurrent_keys(setup: &IuSetup, groups: &[DayGroup]) -> Vec<Option<String>> {
+    let zone_group_by_id: HashMap<&str, Option<&str>> = setup
+        .zones
+        .iter()
+        .map(|z| (z.id.as_str(), z.zone_group.as_deref()))
+        .collect();
+
+    groups
+        .iter()
+        .map(|group| {
+            let first_group = match zone_group_by_id
+                .get(group.zone_durations[0].0.as_str())
+                .copied()
+                .flatten()
+            {
+                Some(g) => g,
+                None => return None,
+            };
+
+            for (zone_id, _) in &group.zone_durations[1..] {
+                if zone_group_by_id.get(zone_id.as_str()).copied().flatten() != Some(first_group) {
+                    return None;
+                }
+            }
+
+            Some(first_group.to_string())
+        })
+        .collect()
+}
+
+fn build_slots(concurrent_keys: &[Option<String>]) -> Vec<Vec<usize>> {
+    let mut slots: Vec<Vec<usize>> = Vec::new();
+    let mut assigned = vec![false; concurrent_keys.len()];
+
+    for (i, key_i) in concurrent_keys.iter().enumerate() {
+        if assigned[i] {
+            continue;
+        }
+
+        assigned[i] = true;
+        let mut slot = vec![i];
+
+        if let Some(g) = key_i {
+            for (j, key_j) in concurrent_keys.iter().enumerate().skip(i + 1) {
+                if key_j.as_deref() == Some(g.as_str()) && !assigned[j] {
+                    assigned[j] = true;
+                    slot.push(j);
+                }
+            }
+        }
+
+        slots.push(slot);
+    }
+
+    slots
+}
+
+fn group_runtime_secs(group: &DayGroup, ctx: &WeekdayBuildCtx<'_>) -> u32 {
+    let zone_secs: u32 = group.zone_durations.iter().map(|(_, s)| s).sum();
+    let n = group.zone_durations.len() as u32;
+    ctx.preamble_secs + zone_secs + ctx.delay_secs * n.saturating_sub(1) + ctx.postamble_secs
 }
 
 fn build_seq_zones(
