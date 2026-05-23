@@ -40,78 +40,6 @@ pub struct ClientSetupInfo {
     pub poll_interval_ms: u64,
 }
 
-#[cfg(feature = "ssr")]
-fn schedule_path(config_dir: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(config_dir).join("iu-schedule.json")
-}
-
-#[cfg(feature = "ssr")]
-fn yaml_path(config_dir: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(config_dir).join("irrigation_unlimited.yaml")
-}
-
-#[cfg(feature = "ssr")]
-async fn load_or_seed_schedule(
-    config_dir: &str,
-    setup: &IuSetup,
-) -> Result<Schedule, ServerFnError> {
-    let path = schedule_path(config_dir);
-
-    if path.exists() {
-        tracing::info!(path = %path.display(), "loading schedule from file");
-        let content = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to read iu-schedule.json: {e}")))?;
-        serde_json::from_str(&content)
-            .map_err(|e| ServerFnError::new(format!("Failed to parse iu-schedule.json: {e}")))
-    } else {
-        tracing::info!("no schedule file found, returning defaults");
-        Ok(Schedule::default_seed_from(setup))
-    }
-}
-
-#[cfg(feature = "ssr")]
-async fn persist_schedule_and_yaml(
-    config_dir: &str,
-    schedule: &Schedule,
-    setup: &IuSetup,
-) -> Result<(), ServerFnError> {
-    use crate::yaml_gen::generate_yaml;
-
-    let config_path = std::path::PathBuf::from(config_dir);
-
-    tokio::fs::create_dir_all(&config_path)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Failed to create config dir: {e}")))?;
-
-    let json = serde_json::to_string_pretty(schedule)
-        .map_err(|e| ServerFnError::new(format!("Failed to serialise schedule: {e}")))?;
-    tokio::fs::write(schedule_path(config_dir), json)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Failed to write iu-schedule.json: {e}")))?;
-
-    let yaml = generate_yaml(schedule, setup)
-        .map_err(|e| ServerFnError::new(format!("Failed to generate YAML: {e}")))?;
-    tokio::fs::write(yaml_path(config_dir), yaml)
-        .await
-        .map_err(|e| {
-            ServerFnError::new(format!("Failed to write irrigation_unlimited.yaml: {e}"))
-        })?;
-
-    Ok(())
-}
-
-#[cfg(feature = "ssr")]
-async fn save_manual_schedule(
-    config_dir: &str,
-    setup: &IuSetup,
-    manual_zones: HashMap<String, u32>,
-) -> Result<(), ServerFnError> {
-    let mut schedule = load_or_seed_schedule(config_dir, setup).await?;
-    schedule.manual_zones = manual_zones;
-    persist_schedule_and_yaml(config_dir, &schedule, setup).await
-}
-
 // ---------------------------------------------------------------------------
 // Server functions
 // ---------------------------------------------------------------------------
@@ -146,7 +74,9 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
 
-    load_or_seed_schedule(&config.config_dir, &setup).await
+    crate::repositories::schedule_repository::load_or_seed_schedule(&config.config_dir, &setup)
+        .await
+        .map_err(ServerFnError::new)
 }
 
 /// Persist the schedule, regenerate the IU YAML, then call the HA reload endpoint.
@@ -161,7 +91,13 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
     let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    persist_schedule_and_yaml(&config.config_dir, &schedule, &setup).await?;
+    crate::services::schedule_service::persist_schedule_and_yaml(
+        &config.config_dir,
+        &schedule,
+        &setup,
+    )
+    .await
+    .map_err(ServerFnError::new)?;
 
     tracing::info!("schedule saved, files written");
 
@@ -253,7 +189,13 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    save_manual_schedule(&config.config_dir, &setup, manual_zones).await?;
+    crate::services::schedule_service::save_manual_schedule(
+        &config.config_dir,
+        &setup,
+        manual_zones,
+    )
+    .await
+    .map_err(ServerFnError::new)?;
 
     // HA calls are best-effort when env vars are absent (local dev).
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
@@ -527,117 +469,5 @@ fn condition_to_emoji(condition: &str) -> Option<&'static str> {
         "windy" | "windy-variant" => Some("💨"),
         "exceptional" => Some("⚠️"),
         _ => None,
-    }
-}
-
-#[cfg(all(test, feature = "ssr"))]
-mod tests {
-    use super::*;
-
-    fn test_setup() -> IuSetup {
-        let yaml = include_str!("../dev/config/iu-setup.yaml");
-        serde_yaml::from_str(yaml).expect("dev/config/iu-setup.yaml failed to parse")
-    }
-
-    fn test_dir(prefix: &str) -> std::path::PathBuf {
-        let base = std::env::temp_dir();
-        let unique = format!(
-            "iu-configurator-{prefix}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock went backwards")
-                .as_nanos()
-        );
-        base.join(unique)
-    }
-
-    #[test]
-    fn load_or_seed_returns_defaults_when_file_missing() {
-        let setup = test_setup();
-        let config_dir = test_dir("seed-missing");
-        std::fs::create_dir_all(&config_dir).expect("failed to create temp dir");
-
-        let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-        let schedule = rt
-            .block_on(load_or_seed_schedule(
-                config_dir.to_str().unwrap_or(""),
-                &setup,
-            ))
-            .expect("load_or_seed_schedule failed");
-
-        let expected = Schedule::default_seed_from(&setup);
-        assert_eq!(schedule.morning_time, expected.morning_time);
-        assert_eq!(schedule.afternoon_time, expected.afternoon_time);
-        assert_eq!(schedule.zones.len(), expected.zones.len());
-        assert!(schedule.zones.contains_key("zone_1"));
-
-        let _ = std::fs::remove_dir_all(config_dir);
-    }
-
-    #[test]
-    fn persist_schedule_and_yaml_writes_both_files() {
-        let setup = test_setup();
-        let config_dir = test_dir("persist");
-        let schedule = Schedule::default_seed_from(&setup);
-
-        let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-        rt.block_on(persist_schedule_and_yaml(
-            config_dir.to_str().unwrap_or(""),
-            &schedule,
-            &setup,
-        ))
-        .expect("persist_schedule_and_yaml failed");
-
-        let schedule_file = schedule_path(config_dir.to_str().unwrap_or(""));
-        let yaml_file = yaml_path(config_dir.to_str().unwrap_or(""));
-
-        assert!(schedule_file.exists(), "expected iu-schedule.json to exist");
-        assert!(
-            yaml_file.exists(),
-            "expected irrigation_unlimited.yaml to exist"
-        );
-
-        let json_text = std::fs::read_to_string(&schedule_file).expect("read schedule json failed");
-        let parsed: Schedule =
-            serde_json::from_str(&json_text).expect("parse schedule json failed");
-        assert_eq!(parsed.morning_time, schedule.morning_time);
-        assert_eq!(parsed.zones.len(), schedule.zones.len());
-        assert!(parsed.zones.contains_key("zone_1"));
-
-        let yaml_text = std::fs::read_to_string(&yaml_file).expect("read yaml failed");
-        assert!(yaml_text.contains("controllers:"));
-        assert!(yaml_text.contains("zones:"));
-
-        let _ = std::fs::remove_dir_all(config_dir);
-    }
-
-    #[test]
-    fn save_manual_schedule_updates_manual_zones() {
-        let setup = test_setup();
-        let config_dir = test_dir("manual");
-
-        let mut manual = HashMap::new();
-        manual.insert("zone_1".to_string(), 120);
-        manual.insert("zone_2".to_string(), 0);
-
-        let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-        rt.block_on(save_manual_schedule(
-            config_dir.to_str().unwrap_or(""),
-            &setup,
-            manual.clone(),
-        ))
-        .expect("save_manual_schedule failed");
-
-        let loaded = rt
-            .block_on(load_or_seed_schedule(
-                config_dir.to_str().unwrap_or(""),
-                &setup,
-            ))
-            .expect("load_or_seed_schedule after save failed");
-
-        assert_eq!(loaded.manual_zones, manual);
-
-        let _ = std::fs::remove_dir_all(config_dir);
     }
 }
