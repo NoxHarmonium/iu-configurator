@@ -13,8 +13,6 @@ pub mod repositories;
 #[cfg(feature = "ssr")]
 pub mod services;
 #[cfg(feature = "ssr")]
-pub mod setup;
-#[cfg(feature = "ssr")]
 pub mod yaml_gen;
 
 #[cfg(feature = "hydrate")]

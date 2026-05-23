@@ -63,7 +63,7 @@ impl Schedule {
     /// Build a seed schedule from the user's setup configuration.
     /// All zone active days start empty; the user configures them via the UI.
     #[cfg(feature = "ssr")]
-    pub fn default_seed_from(setup: &crate::setup::IuSetup) -> Self {
+    pub fn default_seed_from(setup: &super::setup::IuSetup) -> Self {
         let mut zones = HashMap::new();
         for zone in &setup.zones {
             zones.insert(

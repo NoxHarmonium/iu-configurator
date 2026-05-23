@@ -6,8 +6,8 @@ mod time;
 #[cfg(test)]
 mod tests;
 
+use crate::models::IuSetup;
 use crate::models::Schedule;
-use crate::setup::IuSetup;
 
 use builders::build_controllers;
 use quote::quote_time_fields;

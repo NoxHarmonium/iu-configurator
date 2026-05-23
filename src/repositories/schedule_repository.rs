@@ -1,5 +1,5 @@
+use crate::models::IuSetup;
 use crate::models::Schedule;
-use crate::setup::IuSetup;
 
 fn schedule_path(config_dir: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(config_dir).join("iu-schedule.json")

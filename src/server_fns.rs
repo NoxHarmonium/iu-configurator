@@ -11,7 +11,7 @@ use axum::Extension;
 use crate::models::Schedule;
 
 #[cfg(feature = "ssr")]
-use crate::setup::IuSetup;
+use crate::models::IuSetup;
 
 /// Whether any irrigation controller is currently running.
 ///

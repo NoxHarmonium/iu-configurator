@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use crate::models::IuSetup;
 use crate::models::Schedule;
 use crate::repositories::schedule_repository;
-use crate::setup::IuSetup;
 use crate::yaml_gen::generate_yaml;
 
 pub async fn persist_schedule_and_yaml(

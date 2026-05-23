@@ -12,7 +12,7 @@ async fn run() -> Result<(), String> {
     use std::env;
 
     use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, config::Config, handlers, setup::IuSetup};
+    use iu_configurator::{app::*, config::Config, handlers, models::IuSetup};
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};

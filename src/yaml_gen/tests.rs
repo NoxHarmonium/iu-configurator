@@ -1,6 +1,6 @@
 use super::*;
+use crate::models::IuSetup;
 use crate::models::Schedule;
-use crate::setup::IuSetup;
 
 fn test_setup() -> IuSetup {
     let yaml = include_str!("../../dev/config/iu-setup.yaml");

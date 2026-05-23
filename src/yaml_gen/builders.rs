@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use crate::models::IuSetup;
 use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
-use crate::setup::IuSetup;
 
 use super::schema::{IuController, IuEveryNDays, IuSchedule, IuSeqZone, IuSequence, IuZone};
 use super::time::{
