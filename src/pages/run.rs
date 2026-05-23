@@ -4,11 +4,11 @@ use leptos::prelude::*;
 
 use super::use_status_polling;
 use crate::{
-    pages::config::{mmss_to_secs, secs_to_mmss},
     server_fns::{
         IrrigationStatus, cancel_run, get_client_setup, get_irrigation_status, get_schedule,
         run_manual,
     },
+    utils::time::{mmss_to_secs, secs_to_mmss},
 };
 
 #[component]
