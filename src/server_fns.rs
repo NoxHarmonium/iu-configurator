@@ -103,7 +103,9 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
 
     // ── HA reload (best-effort) ────────────────────────────────────────────
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
-        reload_ha_config(&ha_url, &ha_token).await?;
+        crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
+            .await
+            .map_err(ServerFnError::new)?;
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA reload");
     }
@@ -117,8 +119,6 @@ pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
 /// `IrrigationStatus::Unknown` so the UI degrades gracefully.
 #[server]
 pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> {
-    use crate::setup::IuSetup;
-
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
@@ -132,44 +132,17 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
         ));
     };
 
-    let base = ha_url.trim_end_matches('/');
-    let client = reqwest::Client::new();
+    let entity_ids: Vec<String> = setup
+        .controllers
+        .iter()
+        .map(|c| c.ha_master_entity.clone())
+        .collect();
 
-    for controller in &setup.controllers {
-        let url = format!("{}/api/states/{}", base, &controller.ha_master_entity);
-
-        let response = match client
-            .get(&url)
-            .header("Authorization", format!("Bearer {ha_token}"))
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => return Ok(IrrigationStatus::Unknown(format!("HA request failed: {e}"))),
-        };
-
-        if !response.status().is_success() {
-            return Ok(IrrigationStatus::Unknown(format!(
-                "HA returned HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body: serde_json::Value = match response.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                return Ok(IrrigationStatus::Unknown(format!(
-                    "Failed to parse HA response: {e}"
-                )));
-            }
-        };
-
-        if body.get("state").and_then(|s| s.as_str()) == Some("on") {
-            return Ok(IrrigationStatus::Active);
-        }
+    match crate::services::ha_client::any_controller_active(&ha_url, &ha_token, &entity_ids).await {
+        Ok(true) => Ok(IrrigationStatus::Active),
+        Ok(false) => Ok(IrrigationStatus::Idle),
+        Err(e) => Ok(IrrigationStatus::Unknown(e)),
     }
-
-    Ok(IrrigationStatus::Idle)
 }
 
 /// Update manual_zones in the persisted schedule, regenerate YAML, reload HA,
@@ -204,8 +177,12 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
             .first()
             .map(|c| c.ha_master_entity.clone())
             .unwrap_or_default();
-        reload_ha_config(&ha_url, &ha_token).await?;
-        trigger_manual_run(&ha_url, &ha_token, &entity_id).await?;
+        crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
+            .await
+            .map_err(ServerFnError::new)?;
+        crate::services::ha_client::trigger_manual_run(&ha_url, &ha_token, &entity_id)
+            .await
+            .map_err(ServerFnError::new)?;
         tracing::info!("manual run triggered in HA");
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA manual run");
@@ -217,8 +194,6 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 /// Cancel any currently running irrigation sequence on the main controller.
 #[server]
 pub async fn cancel_run() -> Result<(), ServerFnError> {
-    use crate::setup::IuSetup;
-
     tracing::info!("cancel_run requested");
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
@@ -232,105 +207,13 @@ pub async fn cancel_run() -> Result<(), ServerFnError> {
             .first()
             .map(|c| c.ha_master_entity.clone())
             .unwrap_or_default();
-        cancel_ha_run(&ha_url, &ha_token, &entity_id).await?;
+        crate::services::ha_client::cancel_ha_run(&ha_url, &ha_token, &entity_id)
+            .await
+            .map_err(ServerFnError::new)?;
         tracing::info!("irrigation cancelled in HA");
     } else {
         tracing::warn!("HA_URL/HA_TOKEN not set — cancel is a no-op");
     }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// SSR-only helpers (not server functions — called from within server fn bodies)
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "ssr")]
-async fn reload_ha_config(ha_url: &str, ha_token: &str) -> Result<(), ServerFnError> {
-    let url = format!(
-        "{}/api/services/irrigation_unlimited/reload",
-        ha_url.trim_end_matches('/')
-    );
-
-    let response = reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {ha_token}"))
-        .header("Content-Type", "application/json")
-        .body("{}")
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(format!("HA reload request failed: {e}")))?;
-
-    // HA returns 200 with a JSON body on success; anything else is an error.
-    if !response.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "HA reload returned HTTP {}",
-            response.status()
-        )));
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "ssr")]
-async fn trigger_manual_run(
-    ha_url: &str,
-    ha_token: &str,
-    entity_id: &str,
-) -> Result<(), ServerFnError> {
-    let url = format!(
-        "{}/api/services/irrigation_unlimited/manual_run",
-        ha_url.trim_end_matches('/')
-    );
-
-    let body = serde_json::json!({
-        "entity_id": entity_id,
-        "sequence_id": "manual"
-    });
-
-    let response = reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {ha_token}"))
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(format!("HA manual_run request failed: {e}")))?;
-
-    if !response.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "HA manual_run returned HTTP {}",
-            response.status()
-        )));
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "ssr")]
-async fn cancel_ha_run(ha_url: &str, ha_token: &str, entity_id: &str) -> Result<(), ServerFnError> {
-    let url = format!(
-        "{}/api/services/irrigation_unlimited/cancel",
-        ha_url.trim_end_matches('/')
-    );
-
-    let body = serde_json::json!({ "entity_id": entity_id });
-
-    let response = reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {ha_token}"))
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(format!("HA cancel request failed: {e}")))?;
-
-    if !response.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "HA cancel returned HTTP {}",
-            response.status()
-        )));
-    }
-
     Ok(())
 }
 
@@ -345,8 +228,6 @@ async fn cancel_ha_run(ha_url: &str, ha_token: &str, entity_id: &str) -> Result<
 /// HA is unreachable, or any parsing step fails, so the UI degrades silently.
 #[server]
 pub async fn get_weather_forecast() -> Result<HashMap<String, String>, ServerFnError> {
-    use chrono::{DateTime, Datelike, Duration, Local, Weekday};
-
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
@@ -357,117 +238,13 @@ pub async fn get_weather_forecast() -> Result<HashMap<String, String>, ServerFnE
         return Ok(HashMap::new());
     };
 
-    let url = format!(
-        "{}/api/services/weather/get_forecasts?return_response",
-        ha_url.trim_end_matches('/')
-    );
-
-    let body = serde_json::json!({
-        "entity_id": weather_entity,
-        "type": "daily"
-    });
-
-    let response = match reqwest::Client::new()
-        .post(&url)
-        .header("Authorization", format!("Bearer {ha_token}"))
-        .header("Content-Type", "application/json")
-        .body(body.to_string())
-        .send()
+    match crate::services::ha_client::get_weather_forecast(&ha_url, &ha_token, &weather_entity)
         .await
     {
-        Ok(r) => r,
+        Ok(map) => Ok(map),
         Err(e) => {
-            tracing::warn!("weather forecast request failed: {e}");
-            return Ok(HashMap::new());
+            tracing::warn!("{e}");
+            Ok(HashMap::new())
         }
-    };
-
-    if !response.status().is_success() {
-        tracing::warn!("weather forecast returned HTTP {}", response.status());
-        return Ok(HashMap::new());
-    }
-
-    let json: serde_json::Value = match response.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("failed to parse weather forecast response: {e}");
-            return Ok(HashMap::new());
-        }
-    };
-
-    // The REST API with ?return_response returns:
-    // { "changed_states": [], "service_response": { "<entity_id>": { "forecast": [...] } } }
-    let forecast_list = json
-        .get("service_response")
-        .and_then(|r| r.get(&weather_entity))
-        .and_then(|e| e.get("forecast"))
-        .and_then(|f| f.as_array());
-
-    let Some(forecast_list) = forecast_list else {
-        tracing::warn!(response = %json, "unexpected weather forecast response shape");
-        return Ok(HashMap::new());
-    };
-
-    let today = Local::now().date_naive();
-    let window_end = today + Duration::days(7);
-
-    let mut result = HashMap::new();
-
-    for entry in forecast_list {
-        let Some(datetime_str) = entry.get("datetime").and_then(|d| d.as_str()) else {
-            continue;
-        };
-        let Some(condition) = entry.get("condition").and_then(|c| c.as_str()) else {
-            continue;
-        };
-
-        // Parse ISO 8601 — BOM returns timezone-aware strings.
-        let date = if let Ok(dt) = DateTime::parse_from_rfc3339(datetime_str) {
-            dt.date_naive()
-        } else if let Ok(d) = chrono::NaiveDate::parse_from_str(datetime_str, "%Y-%m-%d") {
-            d
-        } else {
-            tracing::warn!("could not parse forecast datetime: {datetime_str}");
-            continue;
-        };
-
-        if date < today || date >= window_end {
-            continue;
-        }
-
-        let day_key = match date.weekday() {
-            Weekday::Mon => "mon",
-            Weekday::Tue => "tue",
-            Weekday::Wed => "wed",
-            Weekday::Thu => "thu",
-            Weekday::Fri => "fri",
-            Weekday::Sat => "sat",
-            Weekday::Sun => "sun",
-        };
-
-        let emoji = condition_to_emoji(condition);
-        if let Some(e) = emoji {
-            result.insert(day_key.to_string(), e.to_string());
-        }
-    }
-
-    Ok(result)
-}
-
-#[cfg(feature = "ssr")]
-fn condition_to_emoji(condition: &str) -> Option<&'static str> {
-    match condition {
-        "sunny" | "clear-night" => Some("☀️"),
-        "partlycloudy" => Some("⛅"),
-        "cloudy" => Some("☁️"),
-        "fog" => Some("🌫️"),
-        "rainy" => Some("🌦️"),
-        "pouring" => Some("🌧️"),
-        "snowy" => Some("❄️"),
-        "snowy-rainy" | "hail" => Some("🌨️"),
-        "lightning" | "lightning-rainy" => Some("⛈️"),
-        "windy" | "windy-variant" => Some("💨"),
-        "exceptional" => Some("⚠️"),
-        _ => None,
     }
 }
