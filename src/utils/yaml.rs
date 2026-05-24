@@ -1,6 +1,7 @@
 /// Wrap bare `time:` scalar values in single quotes.
 /// TODO: There has to be a better way than this!
-pub fn quote_time_fields(yaml: String) -> String {
+#[must_use]
+pub fn quote_time_fields(yaml: &str) -> String {
     let trailing_newline = yaml.ends_with('\n');
     let mut result = yaml
         .lines()
@@ -10,7 +11,7 @@ pub fn quote_time_fields(yaml: String) -> String {
                 let value = value_part.trim();
                 if !value.is_empty() && !value.starts_with('\'') && !value.starts_with('"') {
                     let indent = &line[..line.len() - trimmed.len()];
-                    return format!("{}time: '{}'", indent, value);
+                    return format!("{indent}time: '{value}'");
                 }
             }
             line.to_string()

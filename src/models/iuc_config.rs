@@ -15,19 +15,19 @@ pub struct ControllerConfig {
     pub postamble_secs: u32,
     /// Seconds between successive zones in a sequence.
     pub delay_secs: u32,
-    /// Home Assistant entity_id of the master binary sensor.
+    /// Home Assistant `entity_id` of the master binary sensor.
     pub ha_master_entity: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ZoneConfig {
-    /// Stable zone identifier — must be snake_case, matches iu-schedule.json key.
+    /// Stable zone identifier — must be `snake_case`, matches iu-schedule.json key.
     pub id: String,
     /// Which controller this zone belongs to.
     pub controller_id: String,
     /// Human-readable display name shown in the UI.
     pub name: String,
-    /// Home Assistant switch / input_boolean entity to control.
+    /// Home Assistant switch / `input_boolean` entity to control.
     pub entity_id: String,
     /// Optional concurrency group. Sequences whose zones all share the same
     /// non-empty `zone_group` value are allowed to start at the same time.

@@ -1,4 +1,5 @@
 /// Convert seconds to "MM:SS" display format.
+#[must_use]
 pub fn secs_to_mmss(secs: u32) -> String {
     let m = secs / 60;
     let s = secs % 60;
@@ -7,6 +8,7 @@ pub fn secs_to_mmss(secs: u32) -> String {
 
 /// Parse "MM:SS" (or "HH:MM:SS", or plain seconds) back to total seconds.
 /// Returns 0 on any parse failure so malformed input is treated as zero duration.
+#[must_use]
 pub fn mmss_to_secs(s: &str) -> u32 {
     let parts: Vec<&str> = s.trim().splitn(3, ':').collect();
     match parts.as_slice() {
@@ -26,6 +28,7 @@ pub fn mmss_to_secs(s: &str) -> u32 {
     }
 }
 
+#[must_use]
 pub fn parse_hhmm_to_secs(hhmm: &str) -> u32 {
     let mut parts = hhmm.splitn(2, ':');
     let h: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -33,6 +36,7 @@ pub fn parse_hhmm_to_secs(hhmm: &str) -> u32 {
     h * 3600 + m * 60
 }
 
+#[must_use]
 pub fn format_secs_to_hhmm(secs: u32) -> String {
     let secs = secs % 86400;
     let h = secs / 3600;
@@ -40,6 +44,7 @@ pub fn format_secs_to_hhmm(secs: u32) -> String {
     format!("{h:02}:{m:02}")
 }
 
+#[must_use]
 pub fn format_duration(secs: u32) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
@@ -47,6 +52,7 @@ pub fn format_duration(secs: u32) -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
+#[must_use]
 pub fn weekday_filter(days: &[String]) -> Option<Vec<String>> {
     if days.len() >= 7 {
         None

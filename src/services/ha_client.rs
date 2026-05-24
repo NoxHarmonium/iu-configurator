@@ -90,7 +90,7 @@ pub async fn any_controller_active(
     let client = reqwest::Client::new();
 
     for entity_id in entity_ids {
-        let url = format!("{}/api/states/{}", base, entity_id);
+        let url = format!("{base}/api/states/{entity_id}");
 
         let response = client
             .get(&url)

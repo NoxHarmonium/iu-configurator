@@ -7,6 +7,7 @@ use leptos_router::{
 
 use crate::pages::{config::ConfigPage, run::RunPage, schedule::SchedulePage};
 
+#[must_use]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
@@ -16,7 +17,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <HashedStylesheet options=options.clone()/>
                 <AutoReload options=options.clone() />
-                <HydrationScripts options=options.clone()/>
+                <HydrationScripts options=options/>
                 <MetaTags/>
             </head>
             <body>
@@ -26,6 +27,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
     }
 }
 
+#[allow(clippy::must_use_candidate)] // #[component] macro prevents #[must_use] from working
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();

@@ -11,7 +11,7 @@ use crate::models::ServerConfig;
 /// Whether any irrigation controller is currently running.
 ///
 /// This type crosses the wire (server → client) so it must be de/serializable.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IrrigationStatus {
     /// At least one controller master sensor reports state = "on".
     Active,
@@ -22,14 +22,14 @@ pub enum IrrigationStatus {
 }
 
 /// Minimal zone info sent to the WASM client — no HA entity IDs exposed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientZoneInfo {
     pub id: String,
     pub name: String,
 }
 
 /// Setup data the client needs to render the UI dynamically.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientSetupInfo {
     pub zones: Vec<ClientZoneInfo>,
     pub poll_interval_ms: u64,
@@ -40,6 +40,7 @@ pub struct ClientSetupInfo {
 // ---------------------------------------------------------------------------
 
 /// Return the subset of iuc-config.yaml that the WASM client needs.
+#[allow(clippy::unused_async)] // #[server] requires `async`; no await points needed here
 #[server]
 pub async fn get_client_setup() -> Result<ClientSetupInfo, ServerFnError> {
     let ServerConfig { setup, .. } = expect_context::<ServerConfig>();

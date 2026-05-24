@@ -1,4 +1,4 @@
-//! I/O functions for reading IUCConfig models
+//! I/O functions for reading `IUCConfig` models
 
 use crate::models::IUCConfig;
 

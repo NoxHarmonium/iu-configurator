@@ -19,20 +19,20 @@ const DAYS: &[(&str, &str)] = &[
     ("sun", "Sunday"),
 ];
 
+#[allow(clippy::must_use_candidate)] // #[component] macro prevents #[must_use] from working
 #[component]
 pub fn SchedulePage() -> impl IntoView {
     // ── Remote data ──────────────────────────────────────────────────────────
-    let schedule_res = Resource::new(|| (), |_| get_schedule());
-    let status_res = Resource::new(|| (), |_| get_irrigation_status());
-    let weather_res = Resource::new(|| (), |_| get_weather_forecast());
-    let setup_res = Resource::new(|| (), |_| get_client_setup());
+    let schedule_res = Resource::new(|| (), |()| get_schedule());
+    let status_res = Resource::new(|| (), |()| get_irrigation_status());
+    let weather_res = Resource::new(|| (), |()| get_weather_forecast());
+    let setup_res = Resource::new(|| (), |()| get_client_setup());
 
     let poll_ms = Signal::derive(move || {
         setup_res
             .get()
-            .and_then(|r| r.ok())
-            .map(|s| s.poll_interval_ms)
-            .unwrap_or(5000)
+            .and_then(Result::ok)
+            .map_or(5000, |s| s.poll_interval_ms)
     });
     use_status_polling(move || status_res.refetch(), poll_ms);
 
@@ -61,7 +61,7 @@ pub fn SchedulePage() -> impl IntoView {
     });
 
     // ── Save action ───────────────────────────────────────────────────────────
-    let save_action = Action::new(move |_: &()| {
+    let save_action = Action::new(move |(): &()| {
         let zad = zone_active_days.get();
         let mode = schedule_mode.get();
         let anchor = period_anchor.get();
@@ -88,7 +88,7 @@ pub fn SchedulePage() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(result) = save_action.value().get() {
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     save_error.set(None);
                     save_ok.set(true);
                 }
@@ -114,16 +114,14 @@ pub fn SchedulePage() -> impl IntoView {
         zone_active_days
             .get()
             .get(zone_id)
-            .map(|days| days.iter().any(|d| d == day))
-            .unwrap_or(false)
+            .is_some_and(|days| days.iter().any(|d| d == day))
     };
 
     let all_zones_have_day = move |day: &'static str| -> bool {
         let map = zone_active_days.get();
         zone_ids.get().iter().all(|id| {
             map.get(id.as_str())
-                .map(|d| d.iter().any(|s| s == day))
-                .unwrap_or(false)
+                .is_some_and(|d| d.iter().any(|s| s == day))
         })
     };
 
@@ -131,8 +129,7 @@ pub fn SchedulePage() -> impl IntoView {
         let map = zone_active_days.get();
         zone_ids.get().iter().any(|id| {
             map.get(id.as_str())
-                .map(|d| d.iter().any(|s| s == day))
-                .unwrap_or(false)
+                .is_some_and(|d| d.iter().any(|s| s == day))
         })
     };
 
@@ -217,9 +214,8 @@ pub fn SchedulePage() -> impl IntoView {
                         let zones = setup.zones;
                         let is_active = move || {
                             status_res.get()
-                                .and_then(|r| r.ok())
-                                .map(|s| s == IrrigationStatus::Active)
-                                .unwrap_or(false)
+                                .and_then(Result::ok)
+                                .is_some_and(|s| s == IrrigationStatus::Active)
                         };
 
                         Some(view! {
@@ -256,7 +252,7 @@ pub fn SchedulePage() -> impl IntoView {
                                                     <span class="weather-bar__day">{day_abbr}</span>
                                                     <span class="weather-bar__icon">
                                                         {move || weather_res.get()
-                                                            .and_then(|r| r.ok())
+                                                            .and_then(Result::ok)
                                                             .and_then(|m| m.get(day_key).cloned())
                                                             .unwrap_or_default()}
                                                     </span>
@@ -278,7 +274,7 @@ pub fn SchedulePage() -> impl IntoView {
                                                         <label title=format!("Toggle all zones for {day_label}")>
                                                             <span class="zone-day-matrix__weather-icon">
                                                                 {move || weather_res.get()
-                                                                    .and_then(|r| r.ok())
+                                                                    .and_then(Result::ok)
                                                                     .and_then(|m| m.get(day_key).cloned())
                                                                     .unwrap_or_default()}
                                                             </span>

@@ -17,7 +17,7 @@ pub fn generate_yaml(schedule: &AppState, setup: &IUCConfig) -> Result<String, s
     // serde_yaml targets YAML 1.2 and leaves "HH:MM" unquoted, but Home
     // Assistant uses PyYAML which defaults to YAML 1.1 where bare "HH:MM"
     // scalars are interpreted as sexagesimal numbers. Quote them explicitly.
-    Ok(quote_time_fields(yaml))
+    Ok(quote_time_fields(&yaml))
 }
 
 // ---------------------------------------------------------------------------
@@ -259,9 +259,8 @@ where
         .iter()
         .filter(|z| z.controller_id == ctx.controller_id)
     {
-        let days = match sorted_days(ctx.zone_active_days.get(zone.id.as_str())) {
-            Some(d) => d,
-            None => continue,
+        let Some(days) = sorted_days(ctx.zone_active_days.get(zone.id.as_str())) else {
+            continue;
         };
 
         let secs = match ctx.zone_schedules.get(zone.id.as_str()) {
@@ -305,14 +304,10 @@ fn build_concurrent_keys(setup: &IUCConfig, groups: &[DayGroup]) -> Vec<Option<S
     groups
         .iter()
         .map(|group| {
-            let first_group = match zone_group_by_id
+            let first_group = zone_group_by_id
                 .get(group.zone_durations[0].0.as_str())
                 .copied()
-                .flatten()
-            {
-                Some(g) => g,
-                None => return None,
-            };
+                .flatten()?;
 
             for (zone_id, _) in &group.zone_durations[1..] {
                 if zone_group_by_id.get(zone_id.as_str()).copied().flatten() != Some(first_group) {
@@ -354,6 +349,7 @@ fn build_slots(concurrent_keys: &[Option<String>]) -> Vec<Vec<usize>> {
 
 fn group_runtime_secs(group: &DayGroup, ctx: &WeekdayBuildCtx<'_>) -> u32 {
     let zone_secs: u32 = group.zone_durations.iter().map(|(_, s)| s).sum();
+    #[allow(clippy::cast_possible_truncation)] // zone count will never exceed u32::MAX
     let n = group.zone_durations.len() as u32;
     ctx.preamble_secs + zone_secs + ctx.delay_secs * n.saturating_sub(1) + ctx.postamble_secs
 }
@@ -423,11 +419,11 @@ mod tests {
         serde_yaml::from_str(yaml).expect("dev/config/iuc-config.yaml failed to parse")
     }
 
-    fn set_all_zone_days(schedule: &mut AppState, setup: &IUCConfig, days: Vec<String>) {
+    fn set_all_zone_days(schedule: &mut AppState, setup: &IUCConfig, days: &[String]) {
         for zone in &setup.zones {
             schedule
                 .zone_active_days
-                .insert(zone.id.clone(), days.clone());
+                .insert(zone.id.clone(), days.to_vec());
         }
     }
 
@@ -448,7 +444,7 @@ mod tests {
         set_all_zone_days(
             &mut schedule,
             &setup,
-            vec!["mon".into(), "wed".into(), "fri".into()],
+            &["mon".into(), "wed".into(), "fri".into()],
         );
 
         let yaml = generate_yaml(&schedule, &setup).unwrap();
@@ -465,7 +461,7 @@ mod tests {
     fn test_afternoon_sequence_produced() {
         let setup = test_setup();
         let mut schedule = AppState::default_seed_from(&setup);
-        set_all_zone_days(&mut schedule, &setup, vec!["sat".into(), "sun".into()]);
+        set_all_zone_days(&mut schedule, &setup, &["sat".into(), "sun".into()]);
 
         let yaml = generate_yaml(&schedule, &setup).unwrap();
 
@@ -480,7 +476,7 @@ mod tests {
         set_all_zone_days(
             &mut schedule,
             &setup,
-            vec![
+            &[
                 "mon".into(),
                 "tue".into(),
                 "wed".into(),
@@ -503,7 +499,7 @@ mod tests {
     fn test_disabled_zone_excluded_from_sequence() {
         let setup = test_setup();
         let mut schedule = AppState::default_seed_from(&setup);
-        set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
+        set_all_zone_days(&mut schedule, &setup, &["mon".into()]);
         if let Some(zs) = schedule.zones.get_mut("zone_4") {
             zs.morning_enabled = false;
             zs.afternoon_enabled = false;
@@ -522,9 +518,10 @@ mod tests {
             if line.contains("sequences") {
                 in_sequences = true;
             }
-            if in_sequences && line.contains("zone_id: zone_4") {
-                panic!("zone_4 should not appear in sequences but found: {line}");
-            }
+            assert!(
+                !(in_sequences && line.contains("zone_id: zone_4")),
+                "zone_4 should not appear in sequences but found: {line}"
+            );
         }
     }
 
@@ -532,7 +529,7 @@ mod tests {
     fn test_both_sessions_produced() {
         let setup = test_setup();
         let mut schedule = AppState::default_seed_from(&setup);
-        set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
+        set_all_zone_days(&mut schedule, &setup, &["mon".into()]);
 
         let yaml = generate_yaml(&schedule, &setup).unwrap();
 
@@ -728,7 +725,7 @@ zones:
         let times: Vec<&str> = yaml
             .lines()
             .filter(|l| l.trim().starts_with("time:"))
-            .map(|l| l.trim())
+            .map(str::trim)
             .collect();
         assert_eq!(
             times.len(),
@@ -753,7 +750,7 @@ zones:
         set_all_zone_days(
             &mut schedule,
             &setup,
-            vec![
+            &[
                 "mon".into(),
                 "tue".into(),
                 "wed".into(),

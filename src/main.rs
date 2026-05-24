@@ -1,3 +1,6 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(warnings)]
+
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
@@ -13,7 +16,7 @@ async fn run() -> Result<(), String> {
 
     use axum::{Router, routing::get};
     use iu_configurator::{
-        app::*,
+        app::{App, shell},
         handlers,
         models::{ServerConfig, env::EnvironmentConfig},
     };
