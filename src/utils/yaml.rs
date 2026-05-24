@@ -1,6 +1,6 @@
 /// Wrap bare `time:` scalar values in single quotes.
 /// TODO: There has to be a better way than this!
-pub(super) fn quote_time_fields(yaml: String) -> String {
+pub fn quote_time_fields(yaml: String) -> String {
     let trailing_newline = yaml.ends_with('\n');
     let mut result = yaml
         .lines()

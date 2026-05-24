@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
+use super::irrigation_unlimited_config::generate_yaml;
 use crate::models::AppState;
 use crate::models::IUCConfig;
 use crate::repositories::app_state;
 use crate::repositories::irrigation_unlimited_config;
-use crate::yaml_gen::generate_yaml;
 
 pub async fn persist_app_state_and_yaml(
     config_dir: &str,

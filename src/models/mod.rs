@@ -12,6 +12,9 @@ pub mod env;
 pub use env::EnvironmentConfig;
 
 #[cfg(feature = "ssr")]
+pub(crate) mod irrigation_unlimited_config;
+
+#[cfg(feature = "ssr")]
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub config: EnvironmentConfig,

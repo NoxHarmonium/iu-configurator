@@ -10,8 +10,6 @@ pub mod handlers;
 pub mod repositories;
 #[cfg(feature = "ssr")]
 pub mod services;
-#[cfg(feature = "ssr")]
-pub mod yaml_gen;
 
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
