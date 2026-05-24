@@ -11,8 +11,12 @@ async fn main() {
 async fn run() -> Result<(), String> {
     use std::env;
 
-    use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, handlers, models::env::EnvironmentConfig};
+    use axum::{Router, routing::get};
+    use iu_configurator::{
+        app::*,
+        handlers,
+        models::{ServerConfig, env::EnvironmentConfig},
+    };
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
@@ -76,10 +80,22 @@ async fn run() -> Result<(), String> {
         .route("/healthz", get(handlers::health))
         .merge(
             Router::new()
-                .leptos_routes(&leptos_options, routes, {
-                    let leptos_options = leptos_options.clone();
-                    move || shell(leptos_options.clone())
-                })
+                .leptos_routes_with_context(
+                    &leptos_options,
+                    routes,
+                    {
+                        move || {
+                            provide_context(ServerConfig {
+                                config: config.clone(),
+                                setup: system_config.clone(),
+                            });
+                        }
+                    },
+                    {
+                        let leptos_options = leptos_options.clone();
+                        move || shell(leptos_options.clone())
+                    },
+                )
                 .fallback(leptos_axum::file_and_error_handler(shell))
                 .layer(
                     TraceLayer::new_for_http()
@@ -87,9 +103,7 @@ async fn run() -> Result<(), String> {
                         .on_response(DefaultOnResponse::new().level(Level::INFO)),
                 ),
         )
-        .with_state(leptos_options)
-        .layer(Extension(config))
-        .layer(Extension(system_config));
+        .with_state(leptos_options);
 
     tracing::info!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr)
