@@ -28,7 +28,7 @@ I use it to manage my own home watering system so I think I've ironed out any ma
 
 The easiest way to use it would be via Docker.
 
-An multi arch image is published to `public.ecr.aws/j0s7z4j0/hopyard/iu-configurator` (see https://github.com/NoxHarmonium/iu-configurator/releases) for the latest version.
+A multi arch image is published to `public.ecr.aws/j0s7z4j0/hopyard/iu-configurator` (see https://github.com/NoxHarmonium/iu-configurator/releases) for the latest version.
 
 ### Docker
 
