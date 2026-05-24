@@ -82,13 +82,13 @@ pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
     tracing::info!("schedule saved, files written");
 
     // ── HA reload (best-effort) ────────────────────────────────────────────
-    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
-        crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
-            .await
-            .map_err(ServerFnError::new)?;
-    } else {
+    let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA reload");
-    }
+        return Ok(());
+    };
+    crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
+        .await
+        .map_err(ServerFnError::new)?;
 
     Ok(())
 }
@@ -137,22 +137,22 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
         .map_err(ServerFnError::new)?;
 
     // HA calls are best-effort when env vars are absent (local dev).
-    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
-        let entity_id = setup
-            .controllers
-            .first()
-            .map(|c| c.ha_master_entity.clone())
-            .unwrap_or_default();
-        crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
-            .await
-            .map_err(ServerFnError::new)?;
-        crate::services::ha_client::trigger_manual_run(&ha_url, &ha_token, &entity_id)
-            .await
-            .map_err(ServerFnError::new)?;
-        tracing::info!("manual run triggered in HA");
-    } else {
+    let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA manual run");
-    }
+        return Ok(());
+    };
+    let entity_id = setup
+        .controllers
+        .first()
+        .map(|c| c.ha_master_entity.clone())
+        .unwrap_or_default();
+    crate::services::ha_client::reload_ha_config(&ha_url, &ha_token)
+        .await
+        .map_err(ServerFnError::new)?;
+    crate::services::ha_client::trigger_manual_run(&ha_url, &ha_token, &entity_id)
+        .await
+        .map_err(ServerFnError::new)?;
+    tracing::info!("manual run triggered in HA");
 
     Ok(())
 }
@@ -162,19 +162,19 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 pub async fn cancel_run() -> Result<(), ServerFnError> {
     tracing::info!("cancel_run requested");
     let ServerConfig { config, setup } = expect_context::<ServerConfig>();
-    if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
-        let entity_id = setup
-            .controllers
-            .first()
-            .map(|c| c.ha_master_entity.clone())
-            .unwrap_or_default();
-        crate::services::ha_client::cancel_ha_run(&ha_url, &ha_token, &entity_id)
-            .await
-            .map_err(ServerFnError::new)?;
-        tracing::info!("irrigation cancelled in HA");
-    } else {
+    let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) else {
         tracing::warn!("HA_URL/HA_TOKEN not set — cancel is a no-op");
-    }
+        return Ok(());
+    };
+    let entity_id = setup
+        .controllers
+        .first()
+        .map(|c| c.ha_master_entity.clone())
+        .unwrap_or_default();
+    crate::services::ha_client::cancel_ha_run(&ha_url, &ha_token, &entity_id)
+        .await
+        .map_err(ServerFnError::new)?;
+    tracing::info!("irrigation cancelled in HA");
     Ok(())
 }
 
