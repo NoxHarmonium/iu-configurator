@@ -174,6 +174,11 @@ fn build_controllers(schedule: &AppState, setup: &IUCConfig) -> Vec<IuController
         .collect()
 }
 
+// TODO: build_weekday_sequences mixes day-grouping, concurrency-slot allocation, and time
+// scheduling in one ~70-line function. Split into independently testable sub-functions:
+//   1. build_day_groups()       — which zones run on which days
+//   2. build_concurrent_slots() — which groups can overlap (zone_group logic)
+//   3. allocate_time_slots()    — derive start times from cumulative slot durations
 fn build_weekday_sequences<F, G>(
     ctx: &WeekdayBuildCtx<'_>,
     is_enabled: F,
@@ -287,6 +292,7 @@ fn sorted_days(days: Option<&Vec<String>>) -> Option<Vec<String>> {
     match days {
         Some(d) if !d.is_empty() => {
             let mut sorted = d.clone();
+            // TODO: Could we make this lookup more efficient?
             sorted.sort_by_key(|d| DAY_ORDER.iter().position(|&o| o == d).unwrap_or(7));
             Some(sorted)
         }

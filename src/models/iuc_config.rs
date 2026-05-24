@@ -55,6 +55,10 @@ pub struct IrrigationSystemDefaults {
 
 /// Runtime configuration loaded from `$CONFIG_DIR/iuc-config.yaml`.
 /// Describes the physical irrigation setup — controllers, zones, and seeding defaults.
+// TODO: Add IUCConfig::validate() and call it in main.rs after loading the config file:
+//   • controller.id and zone.id must match [a-z][a-z0-9_]* (snake_case)
+//   • zone.controller_id must reference an existing controller id
+//   • ha_master_entity and entity_id must match the HA "domain.object_id" pattern
 #[derive(Debug, Clone, Deserialize)]
 pub struct IUCConfig {
     /// How often (ms) the UI polls Home Assistant for irrigation status.

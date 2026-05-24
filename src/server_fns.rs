@@ -74,6 +74,8 @@ pub async fn get_schedule() -> Result<AppState, ServerFnError> {
 /// local development) the files are still written and `Ok(())` is returned.
 #[server]
 pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
+    // TODO: Validate schedule before persisting — morning_time/afternoon_time must match
+    // HH:MM format; zone morning_secs/afternoon_secs must be in [0, 86400].
     let ServerConfig { config, setup } = expect_context::<ServerConfig>();
     crate::services::schedule::persist_app_state_and_yaml(&config.config_dir, &schedule, &setup)
         .await
@@ -82,6 +84,9 @@ pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
     tracing::info!("schedule saved, files written");
 
     // ── HA reload (best-effort) ────────────────────────────────────────────
+    // TODO: Extract ha_credentials(config: &EnvironmentConfig) -> Option<(String, String)> —
+    // this let-else pattern is repeated in save_schedule, get_irrigation_status,
+    // run_manual, cancel_run, and get_weather_forecast.
     let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) else {
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA reload");
         return Ok(());
@@ -141,6 +146,8 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
         tracing::warn!("HA_URL/HA_TOKEN not set — skipping HA manual run");
         return Ok(());
     };
+    // TODO: Extract primary_entity(setup: &IUCConfig) -> String helper —
+    // this first-controller lookup is duplicated in run_manual and cancel_run.
     let entity_id = setup
         .controllers
         .first()

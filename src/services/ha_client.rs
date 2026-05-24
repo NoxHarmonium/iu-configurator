@@ -4,6 +4,10 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 
+// TODO: Each function constructs its own reqwest::Client, bypassing connection pooling.
+// Store a shared client in ServerConfig (initialised once at startup) and accept
+// &reqwest::Client as a parameter instead of calling Client::new() per request.
+
 pub async fn reload_ha_config(ha_url: &str, ha_token: &str) -> Result<(), String> {
     let url = format!(
         "{}/api/services/irrigation_unlimited/reload",
@@ -195,6 +199,7 @@ pub async fn get_weather_forecast(
             Weekday::Sun => "sun",
         };
 
+        // TODO: can condition_to_emoji just take a Chrono Weekday type to avoid the conversion above?
         if let Some(e) = condition_to_emoji(condition) {
             result.insert(day_key.to_string(), e.to_string());
         }

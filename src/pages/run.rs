@@ -24,6 +24,7 @@ pub fn RunPage() -> impl IntoView {
             .and_then(Result::ok)
             .map_or(5000, |s| s.poll_interval_ms)
     });
+    // TODO: Use webhook (if HA supports) to avoid polling
     use_status_polling(move || status_res.refetch(), poll_ms);
 
     // Per-zone state keyed by zone_id (populated once setup + schedule load).

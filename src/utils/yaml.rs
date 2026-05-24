@@ -1,5 +1,8 @@
 /// Wrap bare `time:` scalar values in single quotes.
-/// TODO: There has to be a better way than this!
+// TODO: serde_yaml (YAML 1.2) leaves bare "HH:MM" scalars unquoted, but Home Assistant's
+// PyYAML parser (YAML 1.1) interprets them as sexagesimal numbers. A proper fix would be
+// a custom serde serializer that quotes time-format strings natively; this line-by-line
+// post-processing is the pragmatic workaround until that is implemented.
 #[must_use]
 pub fn quote_time_fields(yaml: &str) -> String {
     let trailing_newline = yaml.ends_with('\n');
