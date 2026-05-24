@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ssr")]
-use crate::config::Config;
+use crate::models::env::EnvironmentConfig;
 #[cfg(feature = "ssr")]
 use axum::Extension;
 
@@ -67,7 +67,7 @@ pub async fn get_client_setup() -> Result<ClientSetupInfo, ServerFnError> {
 /// Returns seeded defaults if the file does not yet exist.
 #[server]
 pub async fn get_schedule() -> Result<AppState, ServerFnError> {
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
@@ -85,13 +85,13 @@ pub async fn get_schedule() -> Result<AppState, ServerFnError> {
 /// local development) the files are still written and `Ok(())` is returned.
 #[server]
 pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    crate::services::app_state::persist_app_state_and_yaml(&config.config_dir, &schedule, &setup)
+    crate::services::schedule::persist_app_state_and_yaml(&config.config_dir, &schedule, &setup)
         .await
         .map_err(ServerFnError::new)?;
 
@@ -115,7 +115,7 @@ pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
 /// `IrrigationStatus::Unknown` so the UI degrades gracefully.
 #[server]
 pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> {
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
@@ -152,13 +152,13 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     }
     tracing::info!(zones = ?manual_zones, "starting manual run");
 
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    crate::services::app_state::save_manual_schedule(&config.config_dir, &setup, manual_zones)
+    crate::services::schedule::save_manual_schedule(&config.config_dir, &setup, manual_zones)
         .await
         .map_err(ServerFnError::new)?;
 
@@ -187,7 +187,7 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
 #[server]
 pub async fn cancel_run() -> Result<(), ServerFnError> {
     tracing::info!("cancel_run requested");
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
@@ -220,7 +220,7 @@ pub async fn cancel_run() -> Result<(), ServerFnError> {
 /// HA is unreachable, or any parsing step fails, so the UI degrades silently.
 #[server]
 pub async fn get_weather_forecast() -> Result<HashMap<String, String>, ServerFnError> {
-    let Extension(config) = leptos_axum::extract::<Extension<Config>>()
+    let Extension(config) = leptos_axum::extract::<Extension<EnvironmentConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
 

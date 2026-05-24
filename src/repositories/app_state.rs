@@ -1,3 +1,5 @@
+//! I/O functions for reading/writing AppState models
+
 use crate::models::AppState;
 use crate::models::IUCConfig;
 

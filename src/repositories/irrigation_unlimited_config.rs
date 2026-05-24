@@ -1,3 +1,5 @@
+//! I/O functions for writing Irrigation Unlimited config
+
 fn yaml_path(config_dir: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(config_dir).join("irrigation_unlimited.yaml")
 }

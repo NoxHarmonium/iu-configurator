@@ -1,3 +1,5 @@
+//! I/O functions for reading IUCConfig models
+
 use crate::models::IUCConfig;
 
 fn config_path(config_dir: &str) -> std::path::PathBuf {

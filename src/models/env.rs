@@ -5,7 +5,7 @@ fn default_config_dir() -> String {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Config {
+pub struct EnvironmentConfig {
     #[serde(default = "default_config_dir")]
     pub config_dir: String,
     pub ha_url: Option<String>,
@@ -13,7 +13,7 @@ pub struct Config {
     pub ha_weather_entity: Option<String>,
 }
 
-impl Config {
+impl EnvironmentConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.config_dir.trim().is_empty() {
             return Err("CONFIG_DIR cannot be empty".to_string());

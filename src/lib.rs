@@ -5,8 +5,6 @@ pub mod server_fns;
 pub mod utils;
 
 #[cfg(feature = "ssr")]
-pub mod config;
-#[cfg(feature = "ssr")]
 pub mod handlers;
 #[cfg(feature = "ssr")]
 pub mod repositories;

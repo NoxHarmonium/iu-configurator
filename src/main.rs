@@ -12,7 +12,7 @@ async fn run() -> Result<(), String> {
     use std::env;
 
     use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, config::Config, handlers};
+    use iu_configurator::{app::*, handlers, models::env::EnvironmentConfig};
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
@@ -31,7 +31,8 @@ async fn run() -> Result<(), String> {
         .try_init()
         .map_err(|e| format!("Failed to initialize tracing subscriber: {e}"))?;
 
-    let config = envy::from_env::<Config>().map_err(|e| format!("Invalid configuration: {e}"))?;
+    let config =
+        envy::from_env::<EnvironmentConfig>().map_err(|e| format!("Invalid configuration: {e}"))?;
     config
         .validate()
         .map_err(|e| format!("Invalid configuration: {e}"))?;

@@ -1,3 +1,5 @@
+//! Functions to call Home Assistant via its HTTP API
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};

@@ -1,3 +1,8 @@
+//! Models that define how a particular watering system is set up (e.g. what zones/controllers)
+//!
+//! It is basically a subset of the Irrigation Unlimited config, so when the app needs to generate
+//! a new config for Irrigation Unlimited, it knows how to structure it.
+//!
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]

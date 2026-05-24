@@ -1,2 +1,2 @@
-pub mod app_state;
 pub mod ha_client;
+pub mod schedule;

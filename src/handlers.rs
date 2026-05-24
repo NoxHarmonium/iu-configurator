@@ -1,10 +1,10 @@
 use axum::{Extension, http::StatusCode};
 use serde_json::json;
 
-use crate::config::Config;
+use crate::models::env::EnvironmentConfig;
 
 pub async fn health(
-    Extension(config): Extension<Config>,
+    Extension(config): Extension<EnvironmentConfig>,
 ) -> (StatusCode, axum::Json<serde_json::Value>) {
     let mut checks: Vec<serde_json::Value> = Vec::new();
     let mut ok = true;

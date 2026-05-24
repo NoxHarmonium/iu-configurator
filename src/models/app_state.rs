@@ -1,3 +1,10 @@
+//! Models to do with the current state of the application (e.g. what schedules are selected)
+//!
+//! The zones/controllers are not specified here, you'll want IUCConfig for that.
+//!
+//! It is not required for the application to start up. If it is the first time the application is
+//! being run, this state will be generated with sensible defaults from the IUCConfig.
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
