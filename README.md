@@ -41,14 +41,13 @@ The app is served at <http://localhost:3000> with hot-reloading.
 
 The Rust code is organised by responsibility to keep concerns separated:
 
-- `src/server_fns.rs`: Leptos server-function boundary (request extraction, orchestration, response mapping).
+- `src/handlers.rs`: API endpoints (currently just health checks).
+- `src/models/`: domain/application models.
+- `src/pages/`: Leptos pages (the UI/frontend)
 - `src/repositories/`: persistence and file I/O boundaries.
-  - `schedule_repository.rs`: load/seed/write schedule JSON and generated YAML files.
+- `src/server_fns.rs`: Leptos server-function boundary (request extraction, orchestration, response mapping).
 - `src/services/`: domain/application services and external integrations.
-  - `schedule_service.rs`: schedule orchestration (persist + YAML generation flows).
-  - `ha_client.rs`: Home Assistant HTTP interactions (reload/manual run/cancel/status/forecast).
 - `src/utils/`: shared cross-layer helpers.
-  - `time.rs`: time parsing/formatting helpers used by UI pages.
 
 When adding new logic:
 
