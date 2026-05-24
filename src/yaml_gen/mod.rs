@@ -6,8 +6,8 @@ mod time;
 #[cfg(test)]
 mod tests;
 
-use crate::models::IuSetup;
-use crate::models::Schedule;
+use crate::models::AppState;
+use crate::models::IUCConfig;
 
 use builders::build_controllers;
 use quote::quote_time_fields;
@@ -17,7 +17,7 @@ use schema::IuConfig;
 use time::{format_duration, format_secs_to_hhmm, parse_hhmm_to_secs};
 
 /// Generate an `irrigation_unlimited` YAML string from the active schedule.
-pub fn generate_yaml(schedule: &Schedule, setup: &IuSetup) -> Result<String, serde_yaml::Error> {
+pub fn generate_yaml(schedule: &AppState, setup: &IUCConfig) -> Result<String, serde_yaml::Error> {
     let controllers = build_controllers(schedule, setup);
     let yaml = serde_yaml::to_string(&IuConfig { controllers })?;
     // serde_yaml targets YAML 1.2 and leaves "HH:MM" unquoted, but Home

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ControllerSetup {
+pub struct ControllerConfig {
     pub id: String,
     pub name: String,
     /// Seconds the master turns on before any zone turns on.
@@ -15,7 +15,7 @@ pub struct ControllerSetup {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ZoneSetup {
+pub struct ZoneConfig {
     /// Stable zone identifier — must be snake_case, matches iu-schedule.json key.
     pub id: String,
     /// Which controller this zone belongs to.
@@ -33,7 +33,7 @@ pub struct ZoneSetup {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Defaults {
+pub struct IrrigationSystemDefaults {
     /// Local time for morning watering, e.g. "07:00".
     pub morning_time: String,
     /// Local time for afternoon watering, e.g. "15:00".
@@ -48,29 +48,13 @@ pub struct Defaults {
     pub zone_afternoon_enabled: bool,
 }
 
-/// Runtime configuration loaded from `$CONFIG_DIR/iu-setup.yaml`.
+/// Runtime configuration loaded from `$CONFIG_DIR/iuc-config.yaml`.
 /// Describes the physical irrigation setup — controllers, zones, and seeding defaults.
 #[derive(Debug, Clone, Deserialize)]
-pub struct IuSetup {
+pub struct IUCConfig {
     /// How often (ms) the UI polls Home Assistant for irrigation status.
     pub poll_interval_ms: u64,
-    pub controllers: Vec<ControllerSetup>,
-    pub zones: Vec<ZoneSetup>,
-    pub defaults: Defaults,
-}
-
-impl IuSetup {
-    pub async fn load(config_dir: &str) -> anyhow::Result<Self> {
-        let path = std::path::Path::new(config_dir).join("iu-setup.yaml");
-        let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read iu-setup.yaml at {}: {}. \
-                 Create this file in CONFIG_DIR to configure your controllers and zones.",
-                path.display(),
-                e
-            )
-        })?;
-        serde_yaml::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse iu-setup.yaml: {}", e))
-    }
+    pub controllers: Vec<ControllerConfig>,
+    pub zones: Vec<ZoneConfig>,
+    pub defaults: IrrigationSystemDefaults,
 }

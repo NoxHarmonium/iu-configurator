@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::models::IuSetup;
-use crate::models::{Schedule, ScheduleMode, ZoneSchedule};
+use crate::models::IUCConfig;
+use crate::models::{AppState, AppStateMode, ZoneAppState};
 
 use super::schema::{IuController, IuEveryNDays, IuSchedule, IuSeqZone, IuSequence, IuZone};
 use super::time::{
@@ -15,9 +15,9 @@ struct DayGroup {
 }
 
 struct WeekdayBuildCtx<'a> {
-    setup: &'a IuSetup,
+    setup: &'a IUCConfig,
     controller_id: &'a str,
-    zone_schedules: &'a HashMap<String, ZoneSchedule>,
+    zone_schedules: &'a HashMap<String, ZoneAppState>,
     zone_active_days: &'a HashMap<String, Vec<String>>,
     session_time: &'a str,
     session: &'a str,
@@ -26,7 +26,7 @@ struct WeekdayBuildCtx<'a> {
     postamble_secs: u32,
 }
 
-pub(super) fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuController> {
+pub(super) fn build_controllers(schedule: &AppState, setup: &IUCConfig) -> Vec<IuController> {
     setup
         .controllers
         .iter()
@@ -44,7 +44,7 @@ pub(super) fn build_controllers(schedule: &Schedule, setup: &IuSetup) -> Vec<IuC
 
             let mut sequences = Vec::new();
 
-            let is_periodic = schedule.schedule_mode == ScheduleMode::Periodic;
+            let is_periodic = schedule.schedule_mode == AppStateMode::Periodic;
             let periodic_active =
                 is_periodic && !schedule.period_anchor.is_empty() && schedule.period_days > 0;
 
@@ -165,8 +165,8 @@ fn build_weekday_sequences<F, G>(
     get_secs: G,
 ) -> Vec<IuSequence>
 where
-    F: Fn(&ZoneSchedule) -> bool,
-    G: Fn(&ZoneSchedule) -> u32,
+    F: Fn(&ZoneAppState) -> bool,
+    G: Fn(&ZoneAppState) -> u32,
 {
     let groups = build_day_groups(ctx, &is_enabled, &get_secs);
 
@@ -233,8 +233,8 @@ where
 
 fn build_day_groups<F, G>(ctx: &WeekdayBuildCtx<'_>, is_enabled: &F, get_secs: &G) -> Vec<DayGroup>
 where
-    F: Fn(&ZoneSchedule) -> bool,
-    G: Fn(&ZoneSchedule) -> u32,
+    F: Fn(&ZoneAppState) -> bool,
+    G: Fn(&ZoneAppState) -> u32,
 {
     let mut groups: Vec<DayGroup> = Vec::new();
 
@@ -280,7 +280,7 @@ fn sorted_days(days: Option<&Vec<String>>) -> Option<Vec<String>> {
     }
 }
 
-fn build_concurrent_keys(setup: &IuSetup, groups: &[DayGroup]) -> Vec<Option<String>> {
+fn build_concurrent_keys(setup: &IUCConfig, groups: &[DayGroup]) -> Vec<Option<String>> {
     let zone_group_by_id: HashMap<&str, Option<&str>> = setup
         .zones
         .iter()
@@ -344,11 +344,11 @@ fn group_runtime_secs(group: &DayGroup, ctx: &WeekdayBuildCtx<'_>) -> u32 {
 }
 
 fn build_seq_zones(
-    setup: &IuSetup,
+    setup: &IUCConfig,
     controller_id: &str,
-    zone_schedules: &HashMap<String, ZoneSchedule>,
-    is_enabled: impl Fn(&ZoneSchedule) -> bool,
-    get_secs: impl Fn(&ZoneSchedule) -> u32,
+    zone_schedules: &HashMap<String, ZoneAppState>,
+    is_enabled: impl Fn(&ZoneAppState) -> bool,
+    get_secs: impl Fn(&ZoneAppState) -> u32,
 ) -> Vec<IuSeqZone> {
     setup
         .zones
@@ -371,7 +371,7 @@ fn build_seq_zones(
 }
 
 fn build_manual_seq_zones(
-    setup: &IuSetup,
+    setup: &IUCConfig,
     controller_id: &str,
     manual_zones: &HashMap<String, u32>,
 ) -> Vec<IuSeqZone> {

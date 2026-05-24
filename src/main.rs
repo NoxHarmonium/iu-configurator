@@ -12,7 +12,7 @@ async fn run() -> Result<(), String> {
     use std::env;
 
     use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, config::Config, handlers, models::IuSetup};
+    use iu_configurator::{app::*, config::Config, handlers};
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
@@ -36,12 +36,14 @@ async fn run() -> Result<(), String> {
         .validate()
         .map_err(|e| format!("Invalid configuration: {e}"))?;
 
-    let setup = IuSetup::load(&config.config_dir).await.map_err(|e| {
-        format!(
-            "Failed to load iu-setup.yaml from CONFIG_DIR ({}): {e}",
-            config.config_dir
-        )
-    })?;
+    let system_config = iu_configurator::repositories::iuc_config::load(&config.config_dir)
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to load iuc-config.yaml from CONFIG_DIR ({}): {e}",
+                config.config_dir
+            )
+        })?;
 
     let conf =
         get_configuration(None).map_err(|e| format!("Failed to load Leptos configuration: {e}"))?;
@@ -86,7 +88,7 @@ async fn run() -> Result<(), String> {
         )
         .with_state(leptos_options)
         .layer(Extension(config))
-        .layer(Extension(setup));
+        .layer(Extension(system_config));
 
     tracing::info!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr)

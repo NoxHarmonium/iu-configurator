@@ -1,9 +1,9 @@
-pub mod schedule;
+pub mod app_state;
 
 #[cfg(feature = "ssr")]
-pub mod setup;
+pub mod iuc_config;
 
-pub use schedule::{Schedule, ScheduleMode, ZoneSchedule};
+pub use app_state::{AppState, AppStateMode, ZoneAppState};
 
 #[cfg(feature = "ssr")]
-pub use setup::{ControllerSetup, Defaults, IuSetup, ZoneSetup};
+pub use iuc_config::{ControllerConfig, IUCConfig, IrrigationSystemDefaults, ZoneConfig};

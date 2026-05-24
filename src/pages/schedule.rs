@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 
 use super::use_status_polling;
-use crate::models::ScheduleMode;
+use crate::models::AppStateMode;
 use crate::server_fns::{
     IrrigationStatus, get_client_setup, get_irrigation_status, get_schedule, get_weather_forecast,
     save_schedule,
@@ -46,7 +46,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
     let zone_active_days: RwSignal<HashMap<String, Vec<String>>> = RwSignal::new(HashMap::new());
-    let schedule_mode: RwSignal<ScheduleMode> = RwSignal::new(ScheduleMode::Weekday);
+    let schedule_mode: RwSignal<AppStateMode> = RwSignal::new(AppStateMode::Weekday);
     let period_anchor: RwSignal<String> = RwSignal::new(String::new());
     let period_days: RwSignal<u32> = RwSignal::new(2);
 
@@ -102,7 +102,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Derived validation ─────────────────────────────────────────────────────
     let validation_error = move || -> Option<&'static str> {
-        if schedule_mode.get() == ScheduleMode::Periodic && period_anchor.get().trim().is_empty() {
+        if schedule_mode.get() == AppStateMode::Periodic && period_anchor.get().trim().is_empty() {
             Some("A start date is required for periodic mode.")
         } else {
             None
@@ -228,12 +228,12 @@ pub fn SchedulePage() -> impl IntoView {
                                 <label class="mode-selector__label">"Schedule mode"</label>
                                 <select
                                     class="mode-selector__select"
-                                    prop:value=move || if schedule_mode.get() == ScheduleMode::Periodic { "periodic" } else { "weekday" }
+                                    prop:value=move || if schedule_mode.get() == AppStateMode::Periodic { "periodic" } else { "weekday" }
                                     prop:disabled=move || is_active() || is_saving.get()
                                     on:change=move |ev| {
                                         let value = event_target_value(&ev);
                                         schedule_mode.set(
-                                            if value == "periodic" { ScheduleMode::Periodic } else { ScheduleMode::Weekday }
+                                            if value == "periodic" { AppStateMode::Periodic } else { AppStateMode::Weekday }
                                         );
                                         save_ok.set(false);
                                     }
@@ -245,7 +245,7 @@ pub fn SchedulePage() -> impl IntoView {
 
                             // ── Weekday or Periodic content ──────────────
                             {move || match schedule_mode.get() {
-                                ScheduleMode::Weekday => view! {
+                                AppStateMode::Weekday => view! {
                                     // ── Mobile weather bar ───────────────
                                     <div class="weather-bar">
                                         {DAYS.iter().map(|(day_key, day_label)| {
@@ -332,7 +332,7 @@ pub fn SchedulePage() -> impl IntoView {
                                         }).collect_view()}
                                     </div>
                                 }.into_any(),
-                                ScheduleMode::Periodic => view! {
+                                AppStateMode::Periodic => view! {
                                     <div class="periodic-form">
                                         <div class="field-row">
                                             <label class="field-row__label">"Start date (anchor)"</label>

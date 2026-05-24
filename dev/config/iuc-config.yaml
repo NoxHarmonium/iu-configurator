@@ -1,4 +1,4 @@
-# iu-setup.yaml — irrigation setup configuration
+# iuc-config.yaml — irrigation setup configuration
 #
 # Place this file in CONFIG_DIR (default: /config) alongside iu-schedule.json.
 # Edit it to describe YOUR controllers, zones, and seeding defaults.

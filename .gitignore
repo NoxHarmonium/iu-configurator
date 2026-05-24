@@ -18,4 +18,4 @@ dev/config/*
 !dev/config
 # 3. Unignore the specific file
 # This config file defines all the zones/controllers/etc. and so we should check it in
-!dev/config/iu-setup.yaml
+!dev/config/iuc-config.yaml

@@ -1,13 +1,13 @@
 use super::*;
-use crate::models::IuSetup;
-use crate::models::Schedule;
+use crate::models::AppState;
+use crate::models::IUCConfig;
 
-fn test_setup() -> IuSetup {
-    let yaml = include_str!("../../dev/config/iu-setup.yaml");
-    serde_yaml::from_str(yaml).expect("dev/config/iu-setup.yaml failed to parse")
+fn test_setup() -> IUCConfig {
+    let yaml = include_str!("../../dev/config/iuc-config.yaml");
+    serde_yaml::from_str(yaml).expect("dev/config/iuc-config.yaml failed to parse")
 }
 
-fn set_all_zone_days(schedule: &mut Schedule, setup: &IuSetup, days: Vec<String>) {
+fn set_all_zone_days(schedule: &mut AppState, setup: &IUCConfig, days: Vec<String>) {
     for zone in &setup.zones {
         schedule
             .zone_active_days
@@ -27,7 +27,7 @@ fn test_format_duration() {
 #[test]
 fn test_no_days_produces_no_sequences() {
     let setup = test_setup();
-    let schedule = Schedule::default_seed_from(&setup);
+    let schedule = AppState::default_seed_from(&setup);
     let yaml = generate_yaml(&schedule, &setup).unwrap();
     assert!(!yaml.contains("sequences"));
     assert!(yaml.contains("controllers"));
@@ -37,7 +37,7 @@ fn test_no_days_produces_no_sequences() {
 #[test]
 fn test_morning_sequence_produced() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(
         &mut schedule,
         &setup,
@@ -57,7 +57,7 @@ fn test_morning_sequence_produced() {
 #[test]
 fn test_afternoon_sequence_produced() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(&mut schedule, &setup, vec!["sat".into(), "sun".into()]);
 
     let yaml = generate_yaml(&schedule, &setup).unwrap();
@@ -69,7 +69,7 @@ fn test_afternoon_sequence_produced() {
 #[test]
 fn test_all_seven_days_omits_weekday_field() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(
         &mut schedule,
         &setup,
@@ -95,7 +95,7 @@ fn test_all_seven_days_omits_weekday_field() {
 #[test]
 fn test_disabled_zone_excluded_from_sequence() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
     if let Some(zs) = schedule.zones.get_mut("zone_4") {
         zs.morning_enabled = false;
@@ -124,7 +124,7 @@ fn test_disabled_zone_excluded_from_sequence() {
 #[test]
 fn test_both_sessions_produced() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(&mut schedule, &setup, vec!["mon".into()]);
 
     let yaml = generate_yaml(&schedule, &setup).unwrap();
@@ -136,7 +136,7 @@ fn test_both_sessions_produced() {
 #[test]
 fn test_manual_sequence_emitted_when_zones_selected() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     schedule.manual_zones.insert("zone_1".into(), 120);
     schedule.manual_zones.insert("zone_5".into(), 300);
 
@@ -163,7 +163,7 @@ fn test_manual_sequence_emitted_when_zones_selected() {
 #[test]
 fn test_manual_sequence_absent_when_no_zones() {
     let setup = test_setup();
-    let schedule = Schedule::default_seed_from(&setup);
+    let schedule = AppState::default_seed_from(&setup);
     let yaml = generate_yaml(&schedule, &setup).unwrap();
     assert!(
         !yaml.contains("manual"),
@@ -171,7 +171,7 @@ fn test_manual_sequence_absent_when_no_zones() {
     );
 }
 
-fn setup_from_yaml(yaml: &str) -> IuSetup {
+fn setup_from_yaml(yaml: &str) -> IUCConfig {
     serde_yaml::from_str(yaml).expect("test setup YAML failed to parse")
 }
 
@@ -209,7 +209,7 @@ zones:
 "
     ));
 
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     schedule
         .zone_active_days
         .insert("zone_a".into(), vec!["mon".into()]);
@@ -255,7 +255,7 @@ zones:
 "
     ));
 
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     schedule
         .zone_active_days
         .insert("zone_a".into(), vec!["mon".into()]);
@@ -301,7 +301,7 @@ zones:
 "
     ));
 
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     schedule
         .zone_active_days
         .insert("zone_a".into(), vec!["mon".into()]);
@@ -353,7 +353,7 @@ fn test_parse_and_format_hhmm_helpers() {
 #[test]
 fn print_sample_yaml() {
     let setup = test_setup();
-    let mut schedule = Schedule::default_seed_from(&setup);
+    let mut schedule = AppState::default_seed_from(&setup);
     set_all_zone_days(
         &mut schedule,
         &setup,

@@ -8,10 +8,10 @@ use crate::config::Config;
 #[cfg(feature = "ssr")]
 use axum::Extension;
 
-use crate::models::Schedule;
+use crate::models::AppState;
 
 #[cfg(feature = "ssr")]
-use crate::models::IuSetup;
+use crate::models::IUCConfig;
 
 /// Whether any irrigation controller is currently running.
 ///
@@ -44,10 +44,10 @@ pub struct ClientSetupInfo {
 // Server functions
 // ---------------------------------------------------------------------------
 
-/// Return the subset of iu-setup.yaml that the WASM client needs.
+/// Return the subset of iuc-config.yaml that the WASM client needs.
 #[server]
 pub async fn get_client_setup() -> Result<ClientSetupInfo, ServerFnError> {
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     Ok(ClientSetupInfo {
@@ -66,15 +66,15 @@ pub async fn get_client_setup() -> Result<ClientSetupInfo, ServerFnError> {
 /// Load the current schedule from `$CONFIG_DIR/iu-schedule.json`.
 /// Returns seeded defaults if the file does not yet exist.
 #[server]
-pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
+pub async fn get_schedule() -> Result<AppState, ServerFnError> {
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
 
-    crate::repositories::schedule_repository::load_or_seed_schedule(&config.config_dir, &setup)
+    crate::repositories::app_state::load_or_seed_app_state(&config.config_dir, &setup)
         .await
         .map_err(ServerFnError::new)
 }
@@ -84,20 +84,16 @@ pub async fn get_schedule() -> Result<Schedule, ServerFnError> {
 /// HA reload is best-effort: if `HA_URL` or `HA_TOKEN` are absent (e.g., during
 /// local development) the files are still written and `Ok(())` is returned.
 #[server]
-pub async fn save_schedule(schedule: Schedule) -> Result<(), ServerFnError> {
+pub async fn save_schedule(schedule: AppState) -> Result<(), ServerFnError> {
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    crate::services::schedule_service::persist_schedule_and_yaml(
-        &config.config_dir,
-        &schedule,
-        &setup,
-    )
-    .await
-    .map_err(ServerFnError::new)?;
+    crate::services::app_state::persist_app_state_and_yaml(&config.config_dir, &schedule, &setup)
+        .await
+        .map_err(ServerFnError::new)?;
 
     tracing::info!("schedule saved, files written");
 
@@ -122,7 +118,7 @@ pub async fn get_irrigation_status() -> Result<IrrigationStatus, ServerFnError> 
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
 
@@ -159,16 +155,12 @@ pub async fn run_manual(manual_zones: HashMap<String, u32>) -> Result<(), Server
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    crate::services::schedule_service::save_manual_schedule(
-        &config.config_dir,
-        &setup,
-        manual_zones,
-    )
-    .await
-    .map_err(ServerFnError::new)?;
+    crate::services::app_state::save_manual_schedule(&config.config_dir, &setup, manual_zones)
+        .await
+        .map_err(ServerFnError::new)?;
 
     // HA calls are best-effort when env vars are absent (local dev).
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {
@@ -198,7 +190,7 @@ pub async fn cancel_run() -> Result<(), ServerFnError> {
     let Extension(config) = leptos_axum::extract::<Extension<Config>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let Extension(setup) = leptos_axum::extract::<Extension<IuSetup>>()
+    let Extension(setup) = leptos_axum::extract::<Extension<IUCConfig>>()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     if let (Some(ha_url), Some(ha_token)) = (config.ha_url, config.ha_token) {

@@ -8,7 +8,7 @@ Built with [Leptos](https://github.com/leptos-rs/leptos) + [Axum](https://github
 
 ## How it works
 
-1. **Hardware description** — you describe your physical setup once in `iu-setup.yaml` (controllers, zones, entity IDs). This file lives in `CONFIG_DIR` and is read on startup.
+1. **Hardware description** — you describe your physical setup once in `iuc-config.yaml` (controllers, zones, entity IDs). This file lives in `CONFIG_DIR` and is read on startup.
 2. **Schedule editing** — use the web UI to set watering days, durations, and enable/disable per zone. The schedule is persisted to `iu-schedule.json` in `CONFIG_DIR`.
 3. **YAML generation** — whenever you save the schedule the app generates `irrigation_unlimited.yaml` in `CONFIG_DIR` and sends a reload request to Home Assistant so the new config is picked up immediately.
 
@@ -130,7 +130,7 @@ The `dev/config` volume is where `iu-schedule.json` and `irrigation_unlimited.ya
 
 ---
 
-## `iu-setup.yaml` Reference
+## `iuc-config.yaml` Reference
 
 This file describes your physical irrigation hardware. It is **not** managed by the UI — edit it once when you set up the system.
 
