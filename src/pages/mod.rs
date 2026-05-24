@@ -2,9 +2,10 @@ pub mod config;
 pub mod run;
 pub mod schedule;
 
-/// Starts a recurring poll that calls `refetch()` on `status_res` every
-/// `interval_ms` milliseconds, keeping the status banner and button states
-/// in sync with Home Assistant without requiring a page refresh.
+/// Starts a recurring poll that calls `refetch()` on `status_res` every `interval_ms` milliseconds.
+///
+/// Keeps the status banner and button states in sync with Home Assistant without requiring a page
+/// refresh.
 ///
 /// This is a no-op on the server (SSR) — the interval only runs in the browser.
 pub fn use_status_polling(

@@ -6,6 +6,11 @@ Writes HA_TOKEN and HA_URL to /config/ha.env in KEY=VALUE format.
 Exits 0 whether a token was created or skipped (idempotent).
 """
 
+# TODO: This file was generated mostly by an LLM and is probably pretty brittle
+# I figured since it is just a dev tool to make my life easier when spinning up a docker compose stack
+# it doesn't need to be robust and if it breaks I'll just try something else.
+# It could stop working when Home Assistant changes something.
+
 import json
 import os
 import sys

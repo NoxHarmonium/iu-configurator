@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 
 use super::use_status_polling;
-use crate::models::ScheduleMode;
+use crate::models::AppStateMode;
 use crate::server_fns::{
     IrrigationStatus, get_client_setup, get_irrigation_status, get_schedule, get_weather_forecast,
     save_schedule,
@@ -19,20 +19,20 @@ const DAYS: &[(&str, &str)] = &[
     ("sun", "Sunday"),
 ];
 
+#[allow(clippy::must_use_candidate)] // #[component] macro prevents #[must_use] from working
 #[component]
 pub fn SchedulePage() -> impl IntoView {
     // ── Remote data ──────────────────────────────────────────────────────────
-    let schedule_res = Resource::new(|| (), |_| get_schedule());
-    let status_res = Resource::new(|| (), |_| get_irrigation_status());
-    let weather_res = Resource::new(|| (), |_| get_weather_forecast());
-    let setup_res = Resource::new(|| (), |_| get_client_setup());
+    let schedule_res = Resource::new(|| (), |()| get_schedule());
+    let status_res = Resource::new(|| (), |()| get_irrigation_status());
+    let weather_res = Resource::new(|| (), |()| get_weather_forecast());
+    let setup_res = Resource::new(|| (), |()| get_client_setup());
 
     let poll_ms = Signal::derive(move || {
         setup_res
             .get()
-            .and_then(|r| r.ok())
-            .map(|s| s.poll_interval_ms)
-            .unwrap_or(5000)
+            .and_then(Result::ok)
+            .map_or(5000, |s| s.poll_interval_ms)
     });
     use_status_polling(move || status_res.refetch(), poll_ms);
 
@@ -46,7 +46,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Local reactive state (populated once schedule loads) ─────────────────
     let zone_active_days: RwSignal<HashMap<String, Vec<String>>> = RwSignal::new(HashMap::new());
-    let schedule_mode: RwSignal<ScheduleMode> = RwSignal::new(ScheduleMode::Weekday);
+    let schedule_mode: RwSignal<AppStateMode> = RwSignal::new(AppStateMode::Weekday);
     let period_anchor: RwSignal<String> = RwSignal::new(String::new());
     let period_days: RwSignal<u32> = RwSignal::new(2);
 
@@ -61,7 +61,7 @@ pub fn SchedulePage() -> impl IntoView {
     });
 
     // ── Save action ───────────────────────────────────────────────────────────
-    let save_action = Action::new(move |_: &()| {
+    let save_action = Action::new(move |(): &()| {
         let zad = zone_active_days.get();
         let mode = schedule_mode.get();
         let anchor = period_anchor.get();
@@ -88,7 +88,7 @@ pub fn SchedulePage() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(result) = save_action.value().get() {
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     save_error.set(None);
                     save_ok.set(true);
                 }
@@ -102,7 +102,7 @@ pub fn SchedulePage() -> impl IntoView {
 
     // ── Derived validation ─────────────────────────────────────────────────────
     let validation_error = move || -> Option<&'static str> {
-        if schedule_mode.get() == ScheduleMode::Periodic && period_anchor.get().trim().is_empty() {
+        if schedule_mode.get() == AppStateMode::Periodic && period_anchor.get().trim().is_empty() {
             Some("A start date is required for periodic mode.")
         } else {
             None
@@ -114,16 +114,14 @@ pub fn SchedulePage() -> impl IntoView {
         zone_active_days
             .get()
             .get(zone_id)
-            .map(|days| days.iter().any(|d| d == day))
-            .unwrap_or(false)
+            .is_some_and(|days| days.iter().any(|d| d == day))
     };
 
     let all_zones_have_day = move |day: &'static str| -> bool {
         let map = zone_active_days.get();
         zone_ids.get().iter().all(|id| {
             map.get(id.as_str())
-                .map(|d| d.iter().any(|s| s == day))
-                .unwrap_or(false)
+                .is_some_and(|d| d.iter().any(|s| s == day))
         })
     };
 
@@ -131,8 +129,7 @@ pub fn SchedulePage() -> impl IntoView {
         let map = zone_active_days.get();
         zone_ids.get().iter().any(|id| {
             map.get(id.as_str())
-                .map(|d| d.iter().any(|s| s == day))
-                .unwrap_or(false)
+                .is_some_and(|d| d.iter().any(|s| s == day))
         })
     };
 
@@ -217,9 +214,8 @@ pub fn SchedulePage() -> impl IntoView {
                         let zones = setup.zones;
                         let is_active = move || {
                             status_res.get()
-                                .and_then(|r| r.ok())
-                                .map(|s| s == IrrigationStatus::Active)
-                                .unwrap_or(false)
+                                .and_then(Result::ok)
+                                .is_some_and(|s| s == IrrigationStatus::Active)
                         };
 
                         Some(view! {
@@ -228,12 +224,12 @@ pub fn SchedulePage() -> impl IntoView {
                                 <label class="mode-selector__label">"Schedule mode"</label>
                                 <select
                                     class="mode-selector__select"
-                                    prop:value=move || if schedule_mode.get() == ScheduleMode::Periodic { "periodic" } else { "weekday" }
+                                    prop:value=move || if schedule_mode.get() == AppStateMode::Periodic { "periodic" } else { "weekday" }
                                     prop:disabled=move || is_active() || is_saving.get()
                                     on:change=move |ev| {
                                         let value = event_target_value(&ev);
                                         schedule_mode.set(
-                                            if value == "periodic" { ScheduleMode::Periodic } else { ScheduleMode::Weekday }
+                                            if value == "periodic" { AppStateMode::Periodic } else { AppStateMode::Weekday }
                                         );
                                         save_ok.set(false);
                                     }
@@ -245,7 +241,7 @@ pub fn SchedulePage() -> impl IntoView {
 
                             // ── Weekday or Periodic content ──────────────
                             {move || match schedule_mode.get() {
-                                ScheduleMode::Weekday => view! {
+                                AppStateMode::Weekday => view! {
                                     // ── Mobile weather bar ───────────────
                                     <div class="weather-bar">
                                         {DAYS.iter().map(|(day_key, day_label)| {
@@ -256,7 +252,7 @@ pub fn SchedulePage() -> impl IntoView {
                                                     <span class="weather-bar__day">{day_abbr}</span>
                                                     <span class="weather-bar__icon">
                                                         {move || weather_res.get()
-                                                            .and_then(|r| r.ok())
+                                                            .and_then(Result::ok)
                                                             .and_then(|m| m.get(day_key).cloned())
                                                             .unwrap_or_default()}
                                                     </span>
@@ -278,7 +274,7 @@ pub fn SchedulePage() -> impl IntoView {
                                                         <label title=format!("Toggle all zones for {day_label}")>
                                                             <span class="zone-day-matrix__weather-icon">
                                                                 {move || weather_res.get()
-                                                                    .and_then(|r| r.ok())
+                                                                    .and_then(Result::ok)
                                                                     .and_then(|m| m.get(day_key).cloned())
                                                                     .unwrap_or_default()}
                                                             </span>
@@ -332,7 +328,7 @@ pub fn SchedulePage() -> impl IntoView {
                                         }).collect_view()}
                                     </div>
                                 }.into_any(),
-                                ScheduleMode::Periodic => view! {
+                                AppStateMode::Periodic => view! {
                                     <div class="periodic-form">
                                         <div class="field-row">
                                             <label class="field-row__label">"Start date (anchor)"</label>

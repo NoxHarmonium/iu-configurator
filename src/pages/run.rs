@@ -4,26 +4,27 @@ use leptos::prelude::*;
 
 use super::use_status_polling;
 use crate::{
-    pages::config::{mmss_to_secs, secs_to_mmss},
     server_fns::{
         IrrigationStatus, cancel_run, get_client_setup, get_irrigation_status, get_schedule,
         run_manual,
     },
+    utils::time::{mmss_to_secs, secs_to_mmss},
 };
 
+#[allow(clippy::must_use_candidate)] // #[component] macro prevents #[must_use] from working
 #[component]
 pub fn RunPage() -> impl IntoView {
-    let schedule_res = Resource::new(|| (), |_| get_schedule());
-    let status_res = Resource::new(|| (), |_| get_irrigation_status());
-    let setup_res = Resource::new(|| (), |_| get_client_setup());
+    let schedule_res = Resource::new(|| (), |()| get_schedule());
+    let status_res = Resource::new(|| (), |()| get_irrigation_status());
+    let setup_res = Resource::new(|| (), |()| get_client_setup());
 
     let poll_ms = Signal::derive(move || {
         setup_res
             .get()
-            .and_then(|r| r.ok())
-            .map(|s| s.poll_interval_ms)
-            .unwrap_or(5000)
+            .and_then(Result::ok)
+            .map_or(5000, |s| s.poll_interval_ms)
     });
+    // TODO: Use webhook (if HA supports) to avoid polling
     use_status_polling(move || status_res.refetch(), poll_ms);
 
     // Per-zone state keyed by zone_id (populated once setup + schedule load).
@@ -58,14 +59,14 @@ pub fn RunPage() -> impl IntoView {
     });
 
     // Run action — iterates zone_enabled keys so it needs no zone list reference.
-    let run_action = Action::new(move |_: &()| {
+    let run_action = Action::new(move |(): &()| {
         let enabled_snap = zone_enabled.get();
         let duration_snap = zone_duration.get();
         async move {
             let mut manual_zones: HashMap<String, u32> = HashMap::new();
             for (id, &is_enabled) in &enabled_snap {
                 if is_enabled {
-                    let secs = duration_snap.get(id).map(|d| mmss_to_secs(d)).unwrap_or(0);
+                    let secs = duration_snap.get(id).map_or(0, |d| mmss_to_secs(d));
                     if secs > 0 {
                         manual_zones.insert(id.clone(), secs);
                     }
@@ -79,7 +80,7 @@ pub fn RunPage() -> impl IntoView {
     let run_error = RwSignal::new(Option::<String>::None);
     let run_ok = RwSignal::new(false);
 
-    let cancel_action = Action::new(move |_: &()| async move { cancel_run().await });
+    let cancel_action = Action::new(move |(): &()| async move { cancel_run().await });
     let is_cancelling = cancel_action.pending();
     let cancel_error = RwSignal::new(Option::<String>::None);
 
@@ -97,7 +98,7 @@ pub fn RunPage() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(result) = run_action.value().get() {
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     run_error.set(None);
                     run_ok.set(true);
                     status_res.refetch();
@@ -113,9 +114,8 @@ pub fn RunPage() -> impl IntoView {
     let is_active = move || {
         status_res
             .get()
-            .and_then(|r| r.ok())
-            .map(|s| s == IrrigationStatus::Active)
-            .unwrap_or(false)
+            .and_then(Result::ok)
+            .is_some_and(|s| s == IrrigationStatus::Active)
     };
 
     view! {

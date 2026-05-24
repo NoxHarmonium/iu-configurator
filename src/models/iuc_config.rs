@@ -1,7 +1,12 @@
+//! Models that define how a particular watering system is set up (e.g. what zones/controllers)
+//!
+//! It is basically a subset of the Irrigation Unlimited config, so when the app needs to generate
+//! a new config for Irrigation Unlimited, it knows how to structure it.
+//!
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ControllerSetup {
+pub struct ControllerConfig {
     pub id: String,
     pub name: String,
     /// Seconds the master turns on before any zone turns on.
@@ -10,19 +15,19 @@ pub struct ControllerSetup {
     pub postamble_secs: u32,
     /// Seconds between successive zones in a sequence.
     pub delay_secs: u32,
-    /// Home Assistant entity_id of the master binary sensor.
+    /// Home Assistant `entity_id` of the master binary sensor.
     pub ha_master_entity: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ZoneSetup {
-    /// Stable zone identifier — must be snake_case, matches iu-schedule.json key.
+pub struct ZoneConfig {
+    /// Stable zone identifier — must be `snake_case`, matches iu-schedule.json key.
     pub id: String,
     /// Which controller this zone belongs to.
     pub controller_id: String,
     /// Human-readable display name shown in the UI.
     pub name: String,
-    /// Home Assistant switch / input_boolean entity to control.
+    /// Home Assistant switch / `input_boolean` entity to control.
     pub entity_id: String,
     /// Optional concurrency group. Sequences whose zones all share the same
     /// non-empty `zone_group` value are allowed to start at the same time.
@@ -33,7 +38,7 @@ pub struct ZoneSetup {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Defaults {
+pub struct IrrigationSystemDefaults {
     /// Local time for morning watering, e.g. "07:00".
     pub morning_time: String,
     /// Local time for afternoon watering, e.g. "15:00".
@@ -48,29 +53,17 @@ pub struct Defaults {
     pub zone_afternoon_enabled: bool,
 }
 
-/// Runtime configuration loaded from `$CONFIG_DIR/iu-setup.yaml`.
+/// Runtime configuration loaded from `$CONFIG_DIR/iuc-config.yaml`.
 /// Describes the physical irrigation setup — controllers, zones, and seeding defaults.
+// TODO: Add IUCConfig::validate() and call it in main.rs after loading the config file:
+//   • controller.id and zone.id must match [a-z][a-z0-9_]* (snake_case)
+//   • zone.controller_id must reference an existing controller id
+//   • ha_master_entity and entity_id must match the HA "domain.object_id" pattern
 #[derive(Debug, Clone, Deserialize)]
-pub struct IuSetup {
+pub struct IUCConfig {
     /// How often (ms) the UI polls Home Assistant for irrigation status.
     pub poll_interval_ms: u64,
-    pub controllers: Vec<ControllerSetup>,
-    pub zones: Vec<ZoneSetup>,
-    pub defaults: Defaults,
-}
-
-impl IuSetup {
-    pub async fn load(config_dir: &str) -> anyhow::Result<Self> {
-        let path = std::path::Path::new(config_dir).join("iu-setup.yaml");
-        let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read iu-setup.yaml at {}: {}. \
-                 Create this file in CONFIG_DIR to configure your controllers and zones.",
-                path.display(),
-                e
-            )
-        })?;
-        serde_yaml::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse iu-setup.yaml: {}", e))
-    }
+    pub controllers: Vec<ControllerConfig>,
+    pub zones: Vec<ZoneConfig>,
+    pub defaults: IrrigationSystemDefaults,
 }

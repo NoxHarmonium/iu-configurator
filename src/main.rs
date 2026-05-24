@@ -1,17 +1,33 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(warnings)]
+
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("startup failed: {e}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(feature = "ssr")]
+async fn run() -> Result<(), String> {
     use std::env;
 
-    use axum::{Extension, Router, routing::get};
-    use iu_configurator::{app::*, config::Config, handlers, setup::IuSetup};
+    use axum::{Router, routing::get};
+    use iu_configurator::{
+        app::{App, shell},
+        handlers,
+        models::{ServerConfig, env::EnvironmentConfig},
+    };
     use leptos::prelude::*;
     use leptos_axum::{LeptosRoutes, generate_route_list};
     use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
     use tracing::Level;
 
     if let Ok(env_file) = env::var("ENV_FILE") {
-        dotenvy::from_filename(env_file).unwrap();
+        dotenvy::from_filename(&env_file)
+            .map_err(|e| format!("Failed to load ENV_FILE {env_file}: {e}"))?;
     }
 
     tracing_subscriber::fmt()
@@ -19,14 +35,26 @@ async fn main() {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "iu_configurator=info,tower_http=info".into()),
         )
-        .init();
+        .try_init()
+        .map_err(|e| format!("Failed to initialize tracing subscriber: {e}"))?;
 
-    let config = envy::from_env::<Config>().expect("invalid configuration");
-    let setup = IuSetup::load(&config.config_dir)
+    let config =
+        envy::from_env::<EnvironmentConfig>().map_err(|e| format!("Invalid configuration: {e}"))?;
+    config
+        .validate()
+        .map_err(|e| format!("Invalid configuration: {e}"))?;
+
+    let system_config = iu_configurator::repositories::iuc_config::load(&config.config_dir)
         .await
-        .expect("Failed to load iu-setup.yaml — place this file in CONFIG_DIR (default: /config)");
+        .map_err(|e| {
+            format!(
+                "Failed to load iuc-config.yaml from CONFIG_DIR ({}): {e}",
+                config.config_dir
+            )
+        })?;
 
-    let conf = get_configuration(None).unwrap();
+    let conf =
+        get_configuration(None).map_err(|e| format!("Failed to load Leptos configuration: {e}"))?;
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
 
@@ -55,10 +83,22 @@ async fn main() {
         .route("/healthz", get(handlers::health))
         .merge(
             Router::new()
-                .leptos_routes(&leptos_options, routes, {
-                    let leptos_options = leptos_options.clone();
-                    move || shell(leptos_options.clone())
-                })
+                .leptos_routes_with_context(
+                    &leptos_options,
+                    routes,
+                    {
+                        move || {
+                            provide_context(ServerConfig {
+                                config: config.clone(),
+                                setup: system_config.clone(),
+                            });
+                        }
+                    },
+                    {
+                        let leptos_options = leptos_options.clone();
+                        move || shell(leptos_options.clone())
+                    },
+                )
                 .fallback(leptos_axum::file_and_error_handler(shell))
                 .layer(
                     TraceLayer::new_for_http()
@@ -66,15 +106,18 @@ async fn main() {
                         .on_response(DefaultOnResponse::new().level(Level::INFO)),
                 ),
         )
-        .with_state(leptos_options)
-        .layer(Extension(config))
-        .layer(Extension(setup));
+        .with_state(leptos_options);
 
     tracing::info!("listening on http://{}", &addr);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind server listener on {addr}: {e}"))?;
+
     axum::serve(listener, app.into_make_service())
         .await
-        .unwrap();
+        .map_err(|e| format!("Server exited with error: {e}"))?;
+
+    Ok(())
 }
 
 #[cfg(not(feature = "ssr"))]
