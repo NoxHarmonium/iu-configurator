@@ -20,7 +20,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # ── AWS auth (needed to pull the iu-configurator image from ECR) ────────
       - name: Configure AWS credentials

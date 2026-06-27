@@ -33,7 +33,7 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # ── AWS auth ─────────────────────────────────────────────────────────────
       # Expects OIDC-based auth. Add these secrets to your repo:
@@ -58,7 +58,7 @@ jobs:
         id: setup-buildx
 
       - name: Cache Docker build mounts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         id: cache
         with:
           path: cache-mount
