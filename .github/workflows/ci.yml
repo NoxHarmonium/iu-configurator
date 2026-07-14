@@ -85,7 +85,7 @@ jobs:
 
       # ── E2E smoke tests against the locally built image ──────────────────
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
