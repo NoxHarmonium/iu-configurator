@@ -66,6 +66,7 @@ jobs:
             --retry 30 \
             --retry-delay 10 \
             --retry-connrefused \
+            --retry-all-errors \
             --output /dev/null \
             http://localhost:3000
 
