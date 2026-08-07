@@ -3,6 +3,10 @@
   "extends": ["config:recommended"],
   "timezone": "Australia/Melbourne",
   "schedule": ["after 2am", "before 6am"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "packageRules": [
     {
       "matchManagers": ["cargo"],
