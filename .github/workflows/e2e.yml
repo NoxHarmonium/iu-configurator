@@ -89,8 +89,12 @@ jobs:
       # ── Artifacts ─────────────────────────────────────────────────────────
       - name: Collect stack logs
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
-          --no-color > /tmp/stack-logs.txt 2>&1
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs \
+            --no-color > /tmp/stack-logs.txt 2>&1
+          # Also print to the job log directly, since the uploaded artifact
+          # requires a separate download step to inspect.
+          cat /tmp/stack-logs.txt
 
       - name: Upload Playwright report
         if: failure()
