@@ -99,12 +99,14 @@ async fn run() -> Result<(), String> {
                         move || shell(leptos_options.clone())
                     },
                 )
-                .fallback(leptos_axum::file_and_error_handler(shell))
-                .layer(
-                    TraceLayer::new_for_http()
-                        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-                        .on_response(DefaultOnResponse::new().level(Level::INFO)),
-                ),
+                .fallback(leptos_axum::file_and_error_handler(shell)),
+        )
+        // Applied after merge so it wraps every route (including /healthz),
+        // not just the leptos router it used to be scoped to.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .with_state(leptos_options);
 

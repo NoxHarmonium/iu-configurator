@@ -38,17 +38,38 @@ pub async fn health(
     // ── Check 2: Home Assistant reachable (only when token is set) ────────
     if let (Some(ha_url), Some(ha_token)) = (&config.ha_url, &config.ha_token) {
         let url = format!("{}/api/", ha_url.trim_end_matches('/'));
-        let client = reqwest::Client::builder()
+
+        match reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
-            .map_err(|e| e.to_string());
-
-        let result = match client {
-            Ok(c) => {
-                c.get(&url)
+        {
+            Ok(client) => {
+                match client
+                    .get(&url)
                     .header("Authorization", format!("Bearer {ha_token}"))
                     .send()
                     .await
+                {
+                    Ok(r) if r.status().is_success() => {
+                        checks.push(json!({ "name": "home_assistant", "status": "ok" }));
+                    }
+                    Ok(r) => {
+                        ok = false;
+                        checks.push(json!({
+                            "name": "home_assistant",
+                            "status": "error",
+                            "detail": format!("HTTP {}", r.status())
+                        }));
+                    }
+                    Err(e) => {
+                        ok = false;
+                        checks.push(json!({
+                            "name": "home_assistant",
+                            "status": "error",
+                            "detail": e.to_string()
+                        }));
+                    }
+                }
             }
             Err(e) => {
                 ok = false;
@@ -57,41 +78,14 @@ pub async fn health(
                     "status": "error",
                     "detail": format!("failed to build HTTP client: {e}")
                 }));
-                let status = if ok {
-                    StatusCode::OK
-                } else {
-                    StatusCode::SERVICE_UNAVAILABLE
-                };
-                return (
-                    status,
-                    axum::Json(
-                        json!({ "status": if ok { "ok" } else { "degraded" }, "checks": checks }),
-                    ),
-                );
-            }
-        };
-
-        match result {
-            Ok(r) if r.status().is_success() => {
-                checks.push(json!({ "name": "home_assistant", "status": "ok" }));
-            }
-            Ok(r) => {
-                ok = false;
-                checks.push(json!({
-                    "name": "home_assistant",
-                    "status": "error",
-                    "detail": format!("HTTP {}", r.status())
-                }));
-            }
-            Err(e) => {
-                ok = false;
-                checks.push(json!({
-                    "name": "home_assistant",
-                    "status": "error",
-                    "detail": e.to_string()
-                }));
             }
         }
+    }
+
+    if !ok {
+        // Failure detail otherwise only reaches the probe's HTTP response body,
+        // which kubelet reads but never surfaces in `kubectl logs`.
+        tracing::warn!(checks = %json!(checks), "healthz check failed");
     }
 
     let status = if ok {
