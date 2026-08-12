@@ -14,7 +14,7 @@ async fn main() {
 async fn run() -> Result<(), String> {
     use std::env;
 
-    use axum::{Router, routing::get};
+    use axum::{Extension, Router, routing::get};
     use iu_configurator::{
         app::{App, shell},
         handlers,
@@ -79,8 +79,15 @@ async fn run() -> Result<(), String> {
     }
     let routes = generate_route_list(App);
 
+    // handlers::health pulls EnvironmentConfig via axum's Extension extractor
+    // (not Leptos' provide_context below, which only reaches leptos_routes).
+    // Missing this layer makes every /healthz request 500 at extraction time,
+    // before the handler body — and its logging — ever runs.
+    let health_config = config.clone();
+
     let app = Router::new()
         .route("/healthz", get(handlers::health))
+        .layer(Extension(health_config))
         .merge(
             Router::new()
                 .leptos_routes_with_context(
