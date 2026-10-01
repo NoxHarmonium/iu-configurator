@@ -1,3 +1,7 @@
+// `#[server]` expands to an `async` trait impl; the lint below (Rust 1.98+) flags
+// functions without `.await`, which `#[server]` requires us to declare `async` anyway.
+#![allow(unknown_lints, clippy::unused_async_trait_impl)]
+
 use std::collections::HashMap;
 
 use leptos::prelude::*;
