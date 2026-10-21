@@ -27,7 +27,7 @@ tracing-subscriber = { version = "0.3", features = [
 tower-http = { version = "0.7", features = ["trace"], optional = true }
 envy = { version = "0.4", optional = true }
 chrono = { version = "0.4", optional = true }
-leptos-use = "0.19.0"
+leptos-use = "0.20.0"
 dotenvy = "0.15.7"
 
 [dev-dependencies]
