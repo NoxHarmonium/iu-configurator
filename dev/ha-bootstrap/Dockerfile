@@ -1,4 +1,4 @@
-FROM python:3.14-slim-trixie
+FROM python:3.15-slim-trixie
 
 # Non-root user (defaults to 568:568 for the TrueCharts' version of home assistant, override with --build-arg)
 ARG UID=568
